@@ -36,7 +36,8 @@ select{font-size:15px;padding:5px 8px;margin:2px 4px 2px 0}
   <div id="head" class="small">現在地を取得中…</div>
   <div id="list"></div>
   <div id="err" class="small" style="color:#c00"></div>
-  <div class="small">機体データ：adsb.lol（ODbL）　<span id="upd"></span></div>
+  <div class="small"><span id="upd"></span></div>
+  <div class="small">機体データ：adsb.lol／airplanes.live／adsb.fi　行き先：adsbdb</div>
 </div>
 <script>
 const TOKEN = 'pk.eyJ1IjoiaG9yaWhha28iLCJhIjoiY211djd0ejljMDA5ZjMycHYxaTY3M3BsdSJ9.a1yefJYynC4k_YvllM5DVw';
@@ -159,38 +160,61 @@ function norm(a) {
     track:a.track ?? a.true_heading ?? 0, mil:!!(a.dbFlags & 1),
     rate:a.baro_rate ?? a.geom_rate ?? 0, kmh:a.gs ? Math.round(a.gs * 1.852) : null};
 }
+const SOURCES = [
+  {name:'adsb.lol', url:(la, lo, nm) => `https://api.adsb.lol/v2/point/${la}/${lo}/${nm}`},
+  {name:'airplanes.live', url:(la, lo, nm) => `https://api.airplanes.live/v2/point/${la}/${lo}/${nm}`},
+  {name:'adsb.fi', url:(la, lo, nm) => `https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/${nm}`}
+];
+let srcIdx = 0;
+async function getAc(la, lo, nm) {
+  const errs = [];
+  for (let k = 0; k < SOURCES.length; k++) {
+    const i = (srcIdx + k) % SOURCES.length, s = SOURCES[i];
+    try {
+      const r = await fetch(s.url(la, lo, nm));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      srcIdx = i;
+      return {ac: j.ac || j.aircraft || [], name: s.name};
+    } catch (e) { errs.push(s.name + '：' + e.message); }
+  }
+  throw new Error(errs.join(' ／ '));
+}
 async function tick() {
   if (!pos || busy) return;
   busy = true;
   const km = Number($('rad').value), nm = Math.ceil(km / 1.852);
   try {
-    const r = await fetch(`https://api.adsb.lol/v2/point/${pos[1].toFixed(4)}/${pos[0].toFixed(4)}/${nm}`);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    planes = (j.ac || []).filter(a => a.lat != null && a.lon != null).map(norm)
+    const got = await getAc(pos[1].toFixed(4), pos[0].toFixed(4), nm);
+    planes = got.ac.filter(a => a.lat != null && a.lon != null).map(norm)
       .filter(p => p.dist <= km && ($('ground').checked || !p.ground))
       .sort((a, b) => a.dist - b.dist);
     // 将来の記録用：ここで planes を保存すれば履歴が作れる
     render();
-    $('upd').textContent = '更新 ' + new Date().toLocaleTimeString('ja-JP');
+    $('upd').textContent = `データ元 ${got.name}　更新 ` + new Date().toLocaleTimeString('ja-JP');
+    $('err').textContent = '';
     fetchRoutes(planes).then(render);
   } catch (e) { showErr('機体データの取得に失敗：' + e.message); }
   finally { busy = false; }
 }
+const apConv = a => ({iata:a.iata_code, icao:a.icao_code, name:a.name, location:a.municipality, lat:a.latitude, lon:a.longitude});
 async function fetchRoutes(list) {
   if (routeBusy) return;
-  const need = list.filter(p => /^[A-Z]{2,3}\d/.test(p.cs) && !routes.has(p.cs)).slice(0, 20);
+  const need = list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routes.has(p.cs)).slice(0, 5);
   if (!need.length) return;
   routeBusy = true;
   try {
-    const r = await fetch('https://api.adsb.lol/api/0/routeset', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({planes:need.map(p => ({callsign:p.cs, lat:p.p[1], lng:p.p[0]}))})});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const arr = await r.json();
-    (Array.isArray(arr) ? arr : []).forEach(x => { if (x && x.callsign) routes.set(x.callsign.trim(), x); });
-    need.forEach(p => { if (!routes.has(p.cs)) routes.set(p.cs, {none:true}); });
-  } catch (e) { showErr('行き先の取得に失敗：' + e.message); }
-  finally { routeBusy = false; }
+    for (const p of need) {
+      try {
+        const r = await fetch('https://api.adsbdb.com/v0/callsign/' + encodeURIComponent(p.cs));
+        if (r.status === 404) { routes.set(p.cs, {none:true}); continue; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json(), fr = j.response && j.response.flightroute;
+        if (!fr || !fr.origin || !fr.destination) { routes.set(p.cs, {none:true}); continue; }
+        routes.set(p.cs, {_airports:[apConv(fr.origin), apConv(fr.destination)]});
+      } catch (e) { showErr('行き先の取得に失敗：' + e.message); break; }
+    }
+  } finally { routeBusy = false; }
 }
 function apName(ap) { return JA_AP[ap.iata] || ap.location || ap.name || ap.iata || ap.icao || '?'; }
 function apPt(ap) { const lo = Number(ap.lon ?? ap.lng), la = Number(ap.lat); return isFinite(lo) && isFinite(la) ? [lo, la] : null; }

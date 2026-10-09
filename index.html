@@ -72,11 +72,12 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small"><span id="upd"></span></div>
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net</div>
 </div>
+<script src="config.js"></script>
 <script>
-// ▼▼▼ 中継のアドレス（前回と同じものに書き換える。最後に / は付けない） ▼▼▼
-const RELAY = 'https://miage-relay.horihako.workers.dev';
-// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+// 中継のアドレスは config.js に書く（このファイルを入れ替えても消えないように）
+const RELAYS = [typeof RELAY === 'string' ? RELAY : '', typeof RELAY2 === 'string' ? RELAY2 : '']
+  .map(u => u.trim().replace(/\/+$/, '')).filter(u => /^https:\/\//.test(u) && !u.includes('〇'));
+const RELAY_CF = RELAYS.find(u => !u.includes('script.google.com')) || '';
 const TOKEN = 'pk.eyJ1IjoiaG9yaWhha28iLCJhIjoiY211djd0ejljMDA5ZjMycHYxaTY3M3BsdSJ9.a1yefJYynC4k_YvllM5DVw';
 mapboxgl.accessToken = TOKEN;
 const DEF = [139.38, 35.61]; // 現在地が取れないときの中心（南大沢付近）
@@ -86,6 +87,7 @@ map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
 let pos = null, usingDef = false, sel = null, planes = [], timer = null, busy = false, routeBusy = false, meMarker = null;
 let sky = false, head = null, elevNow = 0, sx = 0, sy = 0, gotOri = false, aimHex = null, toastHex = null, toastTimer = null;
+let usingSaved = false, retryTimer = null, relayIdx = 0;
 const markers = new Map(), photos = new Map(), notified = new Set();
 
 // ---------- 保存（スマホ内） ----------
@@ -167,8 +169,8 @@ map.on('load', () => {
 function drawRange() { if (pos) setData('range', [circle(pos, Number($('rad').value))]); }
 
 // ---------- 現在地 ----------
-function setPos(p, def) {
-  const first = !pos; pos = p; usingDef = def;
+function setPos(p, def, saved) {
+  const first = !pos; pos = p; usingDef = def; usingSaved = !!saved;
   if (!meMarker) {
     const el = document.createElement('div');
     el.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#1e90ff;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5)';
@@ -177,13 +179,6 @@ function setPos(p, def) {
   drawRange();
   if (first) { map.jumpTo({center:p, zoom:9}); start(); }
 }
-if ('geolocation' in navigator) {
-  navigator.geolocation.watchPosition(
-    g => setPos([g.coords.longitude, g.coords.latitude], false),
-    e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
-    {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
-} else setPos(DEF, true);
-
 // ---------- 機体データ ----------
 function start() { clearInterval(timer); tick(); timer = setInterval(tick, 10000); }
 document.addEventListener('visibilitychange', () => {
@@ -193,6 +188,28 @@ $('rad').addEventListener('change', () => { drawRange(); tick(); });
 $('ground').addEventListener('change', () => tick());
 $('sort').addEventListener('change', () => { sortPlanes(); render(); });
 
+async function tfetch(url, ms) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, {signal:ctl.signal}); } finally { clearTimeout(t); }
+}
+// 中継が2本あるときは交互に使い、片方がだめならもう片方で取る
+async function getAc(la, lo, nm) {
+  const errs = [];
+  for (let k = 0; k < RELAYS.length; k++) {
+    const i = (relayIdx + k) % RELAYS.length, base = RELAYS[i], gas = base.includes('script.google.com');
+    const name = gas ? 'Google' : 'Cloudflare';
+    try {
+      const r = await tfetch(gas ? `${base}?lat=${la}&lon=${lo}&nm=${nm}` : `${base}/ac/${la}/${lo}/${nm}`, 8000);
+      const text = await r.text();
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + text.slice(0, 60));
+      const j = JSON.parse(text);
+      if (j.error) throw new Error(j.error);
+      relayIdx = (i + 1) % RELAYS.length;
+      return {j, name, stale:r.headers.get('X-Stale') === '1'};
+    } catch (e) { errs.push(name + '：' + (e.name === 'AbortError' ? '応答なし' : e.message)); }
+  }
+  throw new Error(errs.join(' ／ '));
+}
 function norm(a, now) {
   const ground = a.alt_baro === 'ground';
   const ft = typeof a.alt_geom === 'number' ? a.alt_geom : (typeof a.alt_baro === 'number' ? a.alt_baro : 0);
@@ -226,24 +243,26 @@ function sortPlanes() {
 }
 async function tick() {
   if (!pos || busy) return;
-  if (RELAY.includes('〇')) { showErr('中継のアドレスが未設定です（コード上部の ▼▼▼ の下を書き換えてください）'); return; }
-  busy = true;
-  const km = Number($('rad').value), nm = Math.ceil(km / 1.852);
+  if (!RELAYS.length) { showErr('中継のアドレスが未設定です（config.js を確認してください）'); return; }
+  busy = true; clearTimeout(retryTimer);
+  const km = Number($('rad').value), nm = Math.ceil(km / 1.852) + 1;
   try {
-    const r = await fetch(`${RELAY}/ac/${pos[1].toFixed(4)}/${pos[0].toFixed(4)}/${nm}`);
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 80));
-    const j = await r.json(), now = Date.now();
-    const list = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(a => norm(a, now));
+    const got = await getAc(pos[1].toFixed(2), pos[0].toFixed(2), nm), j = got.j, now = Date.now();
+    const base = typeof j.now === 'number' && Math.abs(j.now - now) < 600000 ? j.now : now;
+    const list = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(a => norm(a, base));
     list.forEach(p => place(p, now));
     planes = list.filter(p => p.dist <= km && ($('ground').checked || !p.ground));
     sortPlanes();
     record(planes);
     notify(planes);
     render();
-    $('upd').textContent = '更新 ' + new Date().toLocaleTimeString('ja-JP');
+    $('upd').textContent = `更新 ${new Date().toLocaleTimeString('ja-JP')}（${got.name}経由${got.stale ? '・少し前のデータ' : ''}）`;
     $('err').textContent = '';
     fetchRoutes(planes).then(changed => { if (changed) render(); });
-  } catch (e) { showErr('機体データの取得に失敗：' + e.message); }
+  } catch (e) {
+    showErr('機体データの取得に失敗（前の表示を続け、3秒後にやり直します）：' + e.message);
+    retryTimer = setTimeout(tick, 3000);
+  }
   finally { busy = false; }
 }
 
@@ -272,7 +291,8 @@ async function fetchRoutes(list) {
   if (!need.length) return false;
   routeBusy = true;
   try {
-    const r = await fetch(`${RELAY}/routes/${need.join(',')}`);
+    if (!RELAY_CF) return false;
+    const r = await tfetch(`${RELAY_CF}/routes/${need.join(',')}`, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json(), now = Date.now();
     need.forEach(cs => {
@@ -318,7 +338,8 @@ function cardHtml(p) {
     <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div></div>`;
 }
 function render() {
-  $('head').textContent = `${planes.length}機（半径${$('rad').value}km）` + (usingDef ? '　※現在地が取れないため南大沢付近を中心にしています' : '');
+  $('head').textContent = `${planes.length}機（半径${$('rad').value}km）` + (usingDef ? '　※現在地が取れないため南大沢付近を中心にしています'
+    : usingSaved ? '　※前回の場所で表示中（現在地を確認しています）' : '');
   $('list').innerHTML = planes.length ? planes.map(cardHtml).join('') : '<div class="small">いま範囲内に飛んでいる機体はありません</div>';
   $('list').querySelectorAll('.card').forEach(c => c.onclick = () => select(c.dataset.hex, false));
   const keep = new Set();
@@ -558,6 +579,21 @@ function changeOffset(d) { offset += d; showOffset(); lsSet('sora_offset', offse
 $('offMinus').onclick = () => changeOffset(-5);
 $('offPlus').onclick = () => changeOffset(5);
 showOffset();
+
+// ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
+const savedPos = lsGet('sora_lastpos', null);
+if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
+if ('geolocation' in navigator) {
+  navigator.geolocation.watchPosition(
+    g => {
+      const p = [g.coords.longitude, g.coords.latitude], wasSaved = usingSaved || usingDef;
+      setPos(p, false, false);
+      lsSet('sora_lastpos', [+p[0].toFixed(3), +p[1].toFixed(3)]);
+      if (wasSaved) setTimeout(tick, busy ? 1500 : 0);
+    },
+    e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
+    {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
+} else if (!pos) setPos(DEF, true);
 </script>
 </body>
 </html>

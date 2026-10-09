@@ -957,4 +957,49 @@ function drawCitiesMap(rows) {
     if (!citiesMap.getSource('cl')) {
       citiesMap.addSource('cl', {type:'geojson', data:fc(lines)});
       citiesMap.addLayer({id:'cl', type:'line', source:'cl', paint:{'line-color':'#e67e22', 'line-width':1.5, 'line-opacity':0.7}});
-      citiesMap.addSource('cp', {type:'geojson',
+      citiesMap.addSource('cp', {type:'geojson', data:fc(pts)});
+      citiesMap.addLayer({id:'cp', type:'circle', source:'cp', paint:{'circle-color':'#c0392b', 'circle-stroke-color':'#fff', 'circle-stroke-width':1,
+        'circle-radius':['interpolate', ['linear'], ['get', 'n'], 1, 4, 10, 8, 50, 14]}});
+      citiesMap.addLayer({id:'cn', type:'symbol', source:'cp', layout:{'text-field':['get', 'name'], 'text-size':12, 'text-offset':[0, 1.1], 'text-anchor':'top'},
+        paint:{'text-color':'#333', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
+      citiesMap.addSource('home', {type:'geojson', data:fc([{type:'Feature', properties:{}, geometry:{type:'Point', coordinates:home}}])});
+      citiesMap.addLayer({id:'home', type:'circle', source:'home', paint:{'circle-color':'#1e90ff', 'circle-radius':6, 'circle-stroke-color':'#fff', 'circle-stroke-width':2}});
+    } else { citiesMap.getSource('cl').setData(fc(lines)); citiesMap.getSource('cp').setData(fc(pts)); }
+    const b = new mapboxgl.LngLatBounds(home, home);
+    pts.forEach(p => b.extend(p.geometry.coordinates));
+    citiesMap.fitBounds(b, {padding:40, maxZoom:6, duration:0});
+  };
+  if (citiesMap.isStyleLoaded()) put(); else citiesMap.once('load', put);
+}
+$('citiesBtn').onclick = () => {
+  $('cities').style.display = 'block';
+  if (!citiesMap) citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:pos || DEF, zoom:1.5});
+  renderCities();
+};
+$('citiesClose').onclick = () => {
+  $('cities').style.display = 'none';
+  if (citiesMap) { citiesMap.remove(); citiesMap = null; }
+};
+$('citiesReset').onclick = () => {
+  if (!confirm('この空から行った都市の記録をすべて消します。よろしいですか？')) return;
+  cities = {list:{}, seen:{}}; lsSet('sora_cities_v1', cities);
+  if (citiesMap) { citiesMap.remove(); citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:pos || DEF, zoom:1.5}); }
+  renderCities();
+};
+
+// ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
+const savedPos = lsGet('sora_lastpos', null);
+if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
+if ('geolocation' in navigator) {
+  navigator.geolocation.watchPosition(
+    g => {
+      const p = [g.coords.longitude, g.coords.latitude], wasSaved = usingSaved || usingDef;
+      setPos(p, false, false);
+      lsSet('sora_lastpos', [+p[0].toFixed(3), +p[1].toFixed(3)]);
+      if (wasSaved) setTimeout(tick, busy ? 1500 : 0);
+    },
+    e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
+    {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
+} else if (!pos) setPos(DEF, true);
+startIss();
+startSky();

@@ -115,8 +115,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small"><span id="upd"></span></div>
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine</div>
 </div>
-<script src="config.js"></script>
-<script src="data.js"></script>
-<script src="app.js"></script>
+<script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
+<script src="config.js?v=7"></script>
+<script src="data.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@ map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
 let pos = null, usingDef = false, sel = null, planes = [], timer = null, busy = false, routeBusy = false, meMarker = null;
 let sky = false, head = null, elevNow = 0, sx = 0, sy = 0, gotOri = false, aimHex = null, toastHex = null, toastTimer = null;
-let usingSaved = false, retryTimer = null, relayIdx = 0, allList = [];
+let usingSaved = false, retryTimer = null, relayIdx = 0, allList = [], camOn = false, camStream = null;
 const markers = new Map(), photos = new Map(), notified = new Set();
 
 // ---------- 保存（スマホ内） ----------
@@ -20,6 +20,8 @@ function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 let routes = lsGet('sora_routes_v1', {}); if (!routes || typeof routes !== 'object') routes = {};
 let zukan = lsGet('sora_zukan_v1', null); if (!zukan || !zukan.types || !zukan.seen) zukan = {types:{}, seen:{}};
 let offset = Number(lsGet('sora_offset', 0)) || 0;
+let fovCam = Number(lsGet('sora_fov', 28)) || 28;
+let cities = lsGet('sora_cities_v1', null); if (!cities || !cities.list || !cities.seen) cities = {list:{}, seen:{}};
 ['rad', 'sort', 'ground', 'ntfMil', 'ntfOver'].forEach(id => {
   const el = $(id), v = lsGet('sora_' + id, null);
   if (v != null) { if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
@@ -221,11 +223,13 @@ async function tick() {
     planes.forEach(p => { p.sun = sunlit(p, now); p.win = windowView(p); });
     sortPlanes();
     record(planes);
+    noteNear(planes, now);
     notify(planes);
     render();
     $('upd').textContent = `更新 ${new Date().toLocaleTimeString('ja-JP')}（${got.name}経由${got.stale ? '・少し前のデータ' : ''}）`;
     $('err').textContent = '';
-    fetchRoutes(planes).then(changed => { if (changed) render(); });
+    fetchRoutes(planes).then(changed => { if (changed) { render(); recordCities(); } });
+    recordCities();
   } catch (e) {
     showErr('機体データの取得に失敗（前の表示を続け、3秒後にやり直します）：' + e.message);
     retryTimer = setTimeout(tick, 3000);
@@ -452,6 +456,10 @@ function renderZukan() {
 }
 $('zukanBtn').onclick = () => { renderZukan(); $('zukan').style.display = 'block'; };
 $('zukanClose').onclick = () => { $('zukan').style.display = 'none'; };
+$('zukanReset').onclick = () => {
+  if (!confirm('機種図鑑の記録をすべて消します。よろしいですか？')) return;
+  zukan = {types:{}, seen:{}}; lsSet('sora_zukan_v1', zukan); renderZukan();
+};
 
 // ---------- 空に向ける ----------
 // 背面カメラが向いている方角と仰角
@@ -476,13 +484,14 @@ function onOri(e) {
 }
 if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOri);
 else window.addEventListener('deviceorientation', onOri);
-const FOV = 35; // 照準の中心から画面の端までの角度
+const FOV = 35; // 照準の中心から画面の端までの角度（カメラなしのとき）
 function drawScope() {
   const c = $('scope'), box = $('scopeBox'), dpr = Math.min(2, window.devicePixelRatio || 1);
   const W = box.clientWidth, H = box.clientHeight;
   if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
   const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, W, H);
+  if (camOn) { g.clearRect(0, 0, W, H); g.shadowColor = 'rgba(0,0,0,.9)'; g.shadowBlur = 4; }
+  else { g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, W, H); g.shadowBlur = 0; }
   g.fillStyle = '#fff'; g.font = '14px sans-serif'; g.textAlign = 'left';
   if (head == null) {
     aimHex = null;
@@ -490,14 +499,14 @@ function drawScope() {
     g.fillText('動かない場合は、スマホを8の字に数回振ってください', 10, 46);
     return;
   }
-  const cx = W / 2, cy = H / 2, sc = Math.min(W, H) / 2 / FOV;
+  const cx = W / 2, cy = H / 2, sc = Math.min(W, H) / 2 / (camOn ? fovCam : FOV);
   const ce = Math.cos(Math.min(80, Math.abs(elevNow)) * Math.PI / 180);
   const dAz = az => ((az - head + 540) % 360) - 180;
   const toXY = (az, el) => [cx + dAz(az) * ce * sc, cy - (el - elevNow) * sc];
   // 地面と地平線、方角
   const hy = cy + elevNow * sc;
   if (hy < H) {
-    g.fillStyle = '#1c2b1c'; g.fillRect(0, Math.max(0, hy), W, H - Math.max(0, hy));
+    if (!camOn) { g.fillStyle = '#1c2b1c'; g.fillRect(0, Math.max(0, hy), W, H - Math.max(0, hy)); }
     g.strokeStyle = '#6b8e6b'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, hy); g.lineTo(W, hy); g.stroke();
   }
   g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#9fc59f';
@@ -550,6 +559,7 @@ function drawScope() {
     g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.stroke();
   }
   // 文字
+  g.shadowBlur = 0;
   g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, 24); g.fillRect(0, H - 46, W, 46);
   g.fillStyle = '#fff'; g.font = '13px sans-serif';
   g.fillText(`向き：${dirName(head)} ${Math.round(head)}°　仰角 ${Math.round(elevNow)}°`, 8, 17);
@@ -583,7 +593,7 @@ function setSky(on) {
   if (on) {
     requestAnimationFrame(scopeLoop);
     setTimeout(() => { if (sky && !gotOri) $('skyInfo').textContent = 'この端末では方位センサーが使えないようです'; }, 1500);
-  } else map.resize();
+  } else { stopCam(); map.resize(); }
 }
 $('skyBtn').onclick = () => setSky(!sky);
 $('scope').onclick = () => { if (aimHex && sel !== aimHex) select(aimHex, true); };
@@ -592,6 +602,31 @@ function changeOffset(d) { offset += d; showOffset(); lsSet('sora_offset', offse
 $('offMinus').onclick = () => changeOffset(-5);
 $('offPlus').onclick = () => changeOffset(5);
 showOffset();
+// ---------- カメラ越しの空 ----------
+async function startCam() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+    const v = $('cam'); v.srcObject = camStream; v.style.display = 'block';
+    try { await v.play(); } catch (e) {}
+    camOn = true;
+  } catch (e) { camOn = false; $('skyInfo').textContent = 'カメラを使えませんでした（' + e.message + '）'; }
+  showCamUi();
+}
+function stopCam() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; camOn = false;
+  const v = $('cam'); v.srcObject = null; v.style.display = 'none';
+  showCamUi();
+}
+function showCamUi() {
+  $('camBtn').classList.toggle('on', camOn);
+  $('camBtn').textContent = camOn ? 'カメラ：ON' : 'カメラ';
+  $('fovCtl').style.display = camOn ? 'inline' : 'none';
+}
+$('camBtn').onclick = () => { if (camOn) stopCam(); else startCam(); };
+function changeFov(d) { fovCam = Math.max(10, Math.min(60, fovCam + d)); lsSet('sora_fov', fovCam); }
+$('fovMinus').onclick = () => changeFov(-2);
+$('fovPlus').onclick = () => changeFov(2);
 
 // ---------- 国際宇宙ステーション ----------
 let issRec = null, issNow = null, issPasses = [], issPassAt = null, issPassPos = null, issBusy = false, issMsg = '', issMarker = null;
@@ -849,19 +884,77 @@ function startSky() {
   setInterval(skyTick, 2000);
 }
 
-// ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
-const savedPos = lsGet('sora_lastpos', null);
-if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
-if ('geolocation' in navigator) {
-  navigator.geolocation.watchPosition(
-    g => {
-      const p = [g.coords.longitude, g.coords.latitude], wasSaved = usingSaved || usingDef;
-      setPos(p, false, false);
-      lsSet('sora_lastpos', [+p[0].toFixed(3), +p[1].toFixed(3)]);
-      if (wasSaved) setTimeout(tick, busy ? 1500 : 0);
-    },
-    e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
-    {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
-} else if (!pos) setPos(DEF, true);
-startIss();
-startSky();
+// ---------- この空から行った都市 ----------
+const nearCand = new Map(); // 10km以内を通った便（行き先が分かったら記録する）
+let citiesMap = null;
+function noteNear(list, now) {
+  list.forEach(p => { if (!p.ground && !p.mil && p.dist <= 10 && /^[A-Z]{2,3}\d/.test(p.cs)) nearCand.set(p.hex, {cs:p.cs, t:now}); });
+  nearCand.forEach((v, k) => { if (now - v.t > 1800000) nearCand.delete(k); });
+}
+function recordCities() {
+  if (!nearCand.size) return;
+  const d = today(), wasEmpty = Object.keys(cities.list).length === 0;
+  let changed = false;
+  nearCand.forEach((v, hex) => {
+    const r = routeEntry(v.cs);
+    if (!r) return;               // まだ行き先を調べていない
+    nearCand.delete(hex);
+    if (r.none || !r.a) return;   // 行き先が分からない便
+    const key = v.cs + '|' + d;
+    if (cities.seen[key]) return;
+    cities.seen[key] = d; changed = true;
+    const ap = r.a[1], id = ap.iata || ap.name;
+    let c = cities.list[id];
+    if (!c) {
+      c = cities.list[id] = {name:apName(ap), lat:ap.lat, lon:ap.lon, n:0, first:d, last:d};
+      if (!wasEmpty) alertMsg(`新しい行き先：${c.name}（${Object.keys(cities.list).length}都市目）`, null, false);
+    }
+    c.n++; c.last = d;
+  });
+  if (!changed) return;
+  for (const k in cities.seen) if (cities.seen[k] !== d) delete cities.seen[k];
+  lsSet('sora_cities_v1', cities);
+  if ($('cities').style.display === 'block') renderCities();
+}
+function gcLine(a, b) { // 大圏コース（地球上の最短経路）の線
+  const pts = [], d = gcKm(a, b), az = gcBrg(a, b), n = Math.max(2, Math.ceil(d / 100));
+  let prev = null;
+  for (let i = 0; i <= n; i++) {
+    const p = destPt(a, az, d * i / n);
+    if (prev) { while (p[0] - prev[0] > 180) p[0] -= 360; while (p[0] - prev[0] < -180) p[0] += 360; }
+    pts.push(p); prev = p;
+  }
+  pts[pts.length - 1] = [b[0] + Math.round((pts[pts.length - 1][0] - b[0]) / 360) * 360, b[1]];
+  return pts;
+}
+function cityRows() {
+  const home = pos || DEF;
+  return Object.entries(cities.list).map(([id, c]) => ({id, ...c, d:gcKm(home, [c.lon, c.lat])}))
+    .sort((x, y) => y.n - x.n || y.last.localeCompare(x.last));
+}
+function renderCities() {
+  const rows = cityRows();
+  if (!rows.length) {
+    $('citiesSum').textContent = 'まだ記録がありません。近くを旅客機が通ると、行き先がここにたまっていきます';
+    $('citiesBody').innerHTML = '';
+  } else {
+    const far = rows.reduce((m, r) => r.d > m.d ? r : m, rows[0]);
+    $('citiesSum').textContent = `この空から${rows.length}都市へ　いちばん遠いのは${far.name}（${Math.round(far.d).toLocaleString()}km）`;
+    $('citiesBody').innerHTML = rows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.n}</td><td>${esc(r.first)}</td><td>${Math.round(r.d).toLocaleString()}km</td></tr>`).join('');
+  }
+  drawCitiesMap(rows);
+}
+function drawCitiesMap(rows) {
+  if (!citiesMap) return;
+  const home = pos || DEF;
+  const lines = rows.map(r => ({type:'Feature', properties:{}, geometry:{type:'LineString', coordinates:gcLine(home, [r.lon, r.lat])}}));
+  const pts = rows.map(r => {
+    const g = gcLine(home, [r.lon, r.lat]), end = g[g.length - 1];
+    return {type:'Feature', properties:{name:r.name, n:r.n}, geometry:{type:'Point', coordinates:end}};
+  });
+  const put = () => {
+    const fc = f => ({type:'FeatureCollection', features:f});
+    if (!citiesMap.getSource('cl')) {
+      citiesMap.addSource('cl', {type:'geojson', data:fc(lines)});
+      citiesMap.addLayer({id:'cl', type:'line', source:'cl', paint:{'line-color':'#e67e22', 'line-width':1.5, 'line-opacity':0.7}});
+      citiesMap.addSource('cp', {type:'geojson',

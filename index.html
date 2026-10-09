@@ -2,824 +2,1093 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>見上げ</title>
+<title>徒歩ナビ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:sans-serif;font-size:15px}
-#map,#scopeBox{position:absolute;top:0;left:0;right:0;height:40%}
-#scopeBox{display:none;background:#0d1b2a;z-index:2}
-#scope{display:block;width:100%;height:100%}
-#panel{position:absolute;top:40%;bottom:0;left:0;right:0;overflow:auto;padding:8px 10px;background:#fafafa;border-top:1px solid #ccc}
-body.skyOn #scopeBox{display:block;height:60%}
-body.skyOn #panel{top:60%}
+#map{position:absolute;top:0;left:0;right:0;height:56%}
+#panel{position:absolute;top:56%;bottom:0;left:0;right:0;overflow:auto;padding:8px 10px;background:#fafafa;border-top:1px solid #ccc}
 @media (min-width:900px){
-  #map,#scopeBox{height:auto;bottom:0;right:420px}
-  #panel{top:0;left:auto;width:420px;border-top:none;border-left:1px solid #ccc}
-  body.skyOn #scopeBox{height:auto}
-  body.skyOn #panel{top:0}
+  #map{height:auto;bottom:0;right:380px}
+  #panel{top:0;left:auto;width:380px;border-top:none;border-left:1px solid #ccc}
 }
-select,button{font-size:15px;padding:5px 8px;margin:2px 4px 2px 0}
-button.on{background:#c0392b;color:#fff;border:1px solid #c0392b;border-radius:4px}
-label{white-space:nowrap;margin-right:6px}
-.card{border:1px solid #ccc;border-left:6px solid #1f6fd1;border-radius:6px;padding:6px 8px;margin:6px 0;background:#fff;line-height:1.5;cursor:pointer}
-.card.mil{border-left-color:#c0392b;background:#fff6f5}
-.card.sel{outline:2px solid #333}
-.where{font-size:13px;color:#555}
-.route{font-size:19px;font-weight:bold}
-.info{font-size:14px}
-.small{color:#777;font-size:12px}
-.near{color:#d35400;font-weight:bold}
-.card.sun{border-left-color:#e6a700;background:#fffbea}
-.sunt{color:#a87400;font-weight:bold}
-#iss{margin:4px 0;padding:5px 8px;border-radius:6px;background:#eef3fb;color:#334;font-size:13px;line-height:1.5}
-.iss{background:#fff;color:#0d1b2a;border:2px solid #0d1b2a;border-radius:10px;font:bold 11px sans-serif;padding:1px 5px;white-space:nowrap}
-.plane{cursor:pointer;line-height:0}
-#detail{display:none;border:2px solid #333;border-radius:6px;background:#fff;padding:6px 8px;margin:6px 0;line-height:1.5}
-#detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
-#toast{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:92%;text-align:center;cursor:pointer}
-#zukan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
-#zukan table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
-#zukan td,#zukan th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
+button,input,select{font-size:15px;padding:6px 10px;margin:3px 3px 3px 0}
+input[type=checkbox]{padding:0;margin:0 4px 0 0}
+#search{width:60%}
+#rem{font-size:22px;font-weight:bold;margin:2px 0}
+#sub{font-size:14px;color:#444;margin:2px 0 6px;line-height:1.6}
+.hit{padding:8px;border-bottom:1px solid #ddd;cursor:pointer;background:#fff}
+.small{color:#777;font-size:12px;margin:4px 0}
+.row{font-size:14px;color:#333}
+.fav{background:#fff3cd;border:1px solid #e0a800;border-radius:14px;padding:4px 12px}
+details{margin:8px 0;background:#fff;border:1px solid #ddd;border-radius:6px;padding:6px}
+#walkBtn{background:#1f6fd1;color:#fff;border:none;border-radius:6px;font-weight:bold}
+#result{font-size:14px;color:#1f3a93;margin:4px 0}
+#favForm{display:none;background:#fff3cd;border-radius:6px;padding:4px 6px;margin:4px 0}
+.me{width:34px;height:34px;position:relative}
+.me .dot{position:absolute;left:8px;top:8px;width:18px;height:18px;border-radius:50%;background:#1e90ff;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5)}
+.me .arw{position:absolute;left:11px;top:0;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #1e90ff;display:none}
+.lg{display:inline-block;width:14px;height:4px;vertical-align:middle;margin:0 2px 0 6px}
+#hud{position:absolute;top:8px;left:8px;z-index:5;display:none;background:rgba(255,255,255,.9);border-radius:8px;padding:6px 10px;box-shadow:0 1px 4px rgba(0,0,0,.3);line-height:1.4;font-size:14px}
+#hud .big{font-size:20px;font-weight:bold}
+#tab{position:absolute;left:0;right:0;bottom:0;height:52px;display:none;z-index:6;background:#fafafa;border-top:1px solid #ccc;align-items:center;justify-content:center;gap:16px}
+body.walking #hud{display:block}
+body.walking #tab{display:flex}
+body.walking #map{height:auto;bottom:52px;right:0}
+body.walking #panel{display:none}
+body.walking.menu #map{bottom:auto;height:50%}
+body.walking.menu #panel{display:block;top:50%;bottom:52px;left:0;right:0;width:auto;border-left:none;border-top:1px solid #ccc}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div id="scopeBox"><canvas id="scope"></canvas></div>
-<div id="toast"></div>
-<div id="zukan">
-  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span>
-  <table><thead><tr><th>機種</th><th>回数</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
-  <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。</div>
-</div>
+<div id="hud"></div>
+<div id="tab"><button id="menuBtn">▲メニュー</button><button id="endBtn">終了</button></div>
 <div id="panel">
-  <div>
-    範囲：<select id="rad"><option>10</option><option>20</option><option selected>30</option><option>50</option><option>100</option><option>150</option></select>km
-    並び：<select id="sort"><option value="dist">近い順</option><option value="come">これから来る順</option></select>
-    <label><input type="checkbox" id="ground">地上も</label>
-  </div>
-  <div>
-    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button>
-    <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
-    <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
-  </div>
-  <div id="skyCtl" style="display:none">
-    補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
-    <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span>
-  </div>
-  <div id="iss"></div>
-  <div id="detail"></div>
-  <div id="head" class="small">現在地を取得中…</div>
-  <div id="list"></div>
+  <div id="rem">目的地を設定してください</div>
+  <div id="sub"></div>
+  <div id="result"></div>
+  <div><button id="walkBtn" disabled>歩き始める</button></div>
+  <div><input id="search" placeholder="目的地（駅名・施設名・住所）"><button id="searchBtn">検索</button></div>
+  <div id="hits"></div>
+  <div id="favBar"></div>
+  <div id="favForm" class="row">名前：<input id="favName" style="width:50%"><button id="favSave">保存</button><button id="favCancel">やめる</button></div>
+  <div><button id="pickBtn">地図で指定</button><button id="viaBtn">経由地を指定</button><button id="viaClear" disabled>経由地を消す</button></div>
+  <div><button id="recalcBtn" disabled>再計算</button><button id="followBtn">追従：ON</button><button id="headBtn">向き：北が上</button><button id="favAdd" disabled>★登録</button></div>
+  <div class="row">延長：<select id="ext">
+      <option value="0">なし</option><option value="300">＋300m</option><option value="500">＋500m</option>
+      <option value="1000">＋1km</option><option value="2000">＋2km</option></select>
+    未踏破を優先：<select id="unexp"><option value="1">なし</option><option value="1.3">弱</option><option value="1.6">強</option></select>
+    <button id="altBtn" disabled>別の案</button></div>
+  <div class="row">周回：<select id="loopKm"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>km
+    <button id="loopBtn">周回コースを作る</button></div>
+  <div class="small"><label><input type="checkbox" id="walkedChk" checked>歩いた道（緑）</label>　<label><input type="checkbox" id="vehChk">乗り物の区間（赤）</label></div>
+  <div class="small"><label><input type="checkbox" id="cmpChk" checked>比較用にMapboxの徒歩ルートを表示（点線）</label></div>
+  <div class="small"><label><input type="checkbox" id="netChk">道のデータを表示</label><br>
+    <span class="lg" style="background:#8a9a9a"></span>通れる道<span class="lg" style="background:#f39c12"></span>階段<span class="lg" style="background:#9b59b6"></span>つながっていない道<span class="lg" style="background:#e74c3c"></span>通行不可の印</div>
+  <div id="status" class="small">現在地を取得中…</div>
   <div id="err" class="small" style="color:#c00"></div>
-  <div class="small"><span id="upd"></span></div>
-  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか</div>
+  <details>
+    <summary>歩いた記録の管理</summary>
+    <div class="small">GPSLoggerのGPXファイルを選んでください（複数可）。同じファイルを読み込み直すと、前回分を置き換えます。書き出したファイル（.json）を選ぶと、記録を復元できます。</div>
+    <input type="file" id="recFile" multiple style="display:none">
+    <button id="recImport">記録を読み込む</button><button id="recExport">記録を書き出す</button><br>
+    <button id="recClear">記録をすべて消す</button>
+    <div id="recStat" class="small"></div>
+  </details>
+  <details>
+    <summary>お気に入りの管理</summary>
+    <div id="favList"></div>
+    <div class="small">端末間で移すとき：書き出し → 文字をコピー → 別の端末に貼って読み込み</div>
+    <textarea id="favText" rows="3" style="width:100%"></textarea>
+    <button id="favExport">書き出し</button><button id="favImport">読み込み</button>
+  </details>
+  <details>
+    <summary>設定</summary>
+    <div class="row">体重：<input id="weight" type="number" min="20" max="200" step="0.5" style="width:90px">kg（カロリー計算用。この端末の中にだけ保存）</div>
+    <div class="small">道のデータはこの端末に30日間保存して使い回します。OpenStreetMapを書き足したあとなどは、下のボタンで取り直してください。</div>
+    <button id="netReset">道のデータを取り直す</button>
+  </details>
+  <div class="small">道路・名称検索データ © OpenStreetMap contributors</div>
 </div>
-<script src="config.js"></script>
 <script>
-// 中継のアドレスは config.js に書く（このファイルを入れ替えても消えないように）
-const RELAYS = [typeof RELAY === 'string' ? RELAY : '', typeof RELAY2 === 'string' ? RELAY2 : '']
-  .map(u => u.trim().replace(/\/+$/, '')).filter(u => /^https:\/\//.test(u) && !u.includes('〇'));
-const RELAY_CF = RELAYS.find(u => !u.includes('script.google.com')) || '';
+// ▼▼▼ トークン ▼▼▼
 const TOKEN = 'pk.eyJ1IjoiaG9yaWhha28iLCJhIjoiY211djd0ejljMDA5ZjMycHYxaTY3M3BsdSJ9.a1yefJYynC4k_YvllM5DVw';
+// ▲▲▲▲▲▲▲▲▲▲▲▲
+
+const MAX_M = 5000;   // 徒歩で計算する上限（直線距離）
+const MARGIN = 500;   // 周りに取る余白（m）
+const SPEED = 80;     // 分速80m
+const VEH_MS = 2.78;  // これより速い区間（時速10km超）は乗り物とみなす
+const CACHE_DAYS = 30, CACHE_MAX = 10; // 道のデータの保存日数と保存する範囲の数
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const HW = '^(footway|path|pedestrian|steps|corridor|living_street|residential|service|unclassified|road|track|cycleway|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link|trunk|trunk_link)$';
+const NET_COLOR = {ok:'#8a9a9a', steps:'#f39c12', iso:'#9b59b6', ng:'#e74c3c'};
+
 mapboxgl.accessToken = TOKEN;
-const DEF = [139.38, 35.61]; // 現在地が取れないときの中心（南大沢付近）
-const $ = id => document.getElementById(id);
-const map = new mapboxgl.Map({container:'map', style:'mapbox://styles/mapbox/light-v11', center:DEF, zoom:9});
+const map = new mapboxgl.Map({
+  container: 'map', style: 'mapbox://styles/mapbox/standard',
+  center: [139.33, 35.62], zoom: 12, language: 'ja'
+});
 map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
-let pos = null, usingDef = false, sel = null, planes = [], timer = null, busy = false, routeBusy = false, meMarker = null;
-let sky = false, head = null, elevNow = 0, sx = 0, sy = 0, gotOri = false, aimHex = null, toastHex = null, toastTimer = null;
-let usingSaved = false, retryTimer = null, relayIdx = 0;
-const markers = new Map(), photos = new Map(), notified = new Set();
-
-// ---------- 保存（スマホ内） ----------
-function lsGet(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
-function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
-let routes = lsGet('sora_routes_v1', {}); if (!routes || typeof routes !== 'object') routes = {};
-let zukan = lsGet('sora_zukan_v1', null); if (!zukan || !zukan.types || !zukan.seen) zukan = {types:{}, seen:{}};
-let offset = Number(lsGet('sora_offset', 0)) || 0;
-['rad', 'sort', 'ground', 'ntfMil', 'ntfOver'].forEach(id => {
-  const el = $(id), v = lsGet('sora_' + id, null);
-  if (v != null) { if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
-  el.addEventListener('change', () => lsSet('sora_' + id, el.type === 'checkbox' ? el.checked : el.value));
-});
-
-// ---------- 辞書 ----------
-const JA_AP = {HND:'羽田',NRT:'成田',KIX:'関西',ITM:'伊丹',UKB:'神戸',NGO:'中部',FSZ:'静岡',FUK:'福岡',CTS:'新千歳',OKA:'那覇',
-  KOJ:'鹿児島',KMJ:'熊本',KMI:'宮崎',OIT:'大分',NGS:'長崎',HSG:'佐賀',KKJ:'北九州',UBJ:'山口宇部',HIJ:'広島',OKJ:'岡山',IZO:'出雲',
-  YGJ:'米子',TTJ:'鳥取',MYJ:'松山',TAK:'高松',KCZ:'高知',TKS:'徳島',KMQ:'小松',TOY:'富山',NTQ:'能登',KIJ:'新潟',SDJ:'仙台',
-  AOJ:'青森',AXT:'秋田',GAJ:'山形',HNA:'花巻',MSJ:'三沢',FKS:'福島',HKD:'函館',AKJ:'旭川',KUH:'釧路',OBO:'帯広',MMB:'女満別',
-  WKJ:'稚内',ISG:'石垣',MMY:'宮古',ASJ:'奄美',HAC:'八丈島',OIM:'大島',MMJ:'松本',OKO:'横田',
-  ICN:'ソウル仁川',GMP:'ソウル金浦',PUS:'釜山',CJU:'済州',TPE:'台北桃園',TSA:'台北松山',KHH:'高雄',HKG:'香港',MFM:'マカオ',
-  PVG:'上海浦東',SHA:'上海虹橋',PEK:'北京首都',PKX:'北京大興',DLC:'大連',CAN:'広州',MNL:'マニラ',CEB:'セブ',BKK:'バンコク',
-  DMK:'バンコク',SIN:'シンガポール',KUL:'クアラルンプール',CGK:'ジャカルタ',DPS:'バリ',SGN:'ホーチミン',HAN:'ハノイ',DAD:'ダナン',
-  GUM:'グアム',SPN:'サイパン',HNL:'ホノルル',LAX:'ロサンゼルス',SFO:'サンフランシスコ',SEA:'シアトル',JFK:'ニューヨーク',
-  ORD:'シカゴ',DFW:'ダラス',YVR:'バンクーバー',LHR:'ロンドン',CDG:'パリ',FRA:'フランクフルト',MUC:'ミュンヘン',HEL:'ヘルシンキ',
-  AMS:'アムステルダム',IST:'イスタンブール',DOH:'ドーハ',DXB:'ドバイ',SYD:'シドニー',MEL:'メルボルン',BNE:'ブリスベン'};
-const AIRLINE = {JAL:'日本航空',ANA:'全日空',ADO:'エア・ドゥ',SKY:'スカイマーク',SFJ:'スターフライヤー',SNJ:'ソラシドエア',
-  JJP:'ジェットスター・ジャパン',APJ:'ピーチ',SJO:'スプリング・ジャパン',JTA:'日本トランスオーシャン',AKX:'ANAウイングス',
-  JLJ:'J-AIR',IBX:'IBEX',FDA:'フジドリーム',NCA:'日本貨物航空',ZIP:'ZIPAIR',KAL:'大韓航空',AAR:'アシアナ',JNA:'ジンエアー',
-  TWB:'ティーウェイ',JJA:'チェジュ航空',ABL:'エアプサン',ASV:'エアソウル',CAL:'チャイナエアライン',EVA:'エバー航空',
-  SJX:'スターラックス',TTW:'タイガーエア台湾',CPA:'キャセイ',HKE:'香港エクスプレス',CES:'中国東方',CCA:'中国国際',
-  CSN:'中国南方',UAL:'ユナイテッド',DAL:'デルタ',AAL:'アメリカン',HAL:'ハワイアン',FDX:'フェデックス',UPS:'UPS',
-  SIA:'シンガポール航空',THA:'タイ国際',PAL:'フィリピン航空',CEB:'セブパシフィック',VJC:'ベトジェット',HVN:'ベトナム航空',
-  QTR:'カタール',UAE:'エミレーツ',FIN:'フィンエアー',BAW:'ブリティッシュ',AFR:'エールフランス',DLH:'ルフトハンザ',
-  KLM:'KLM',ACA:'エア・カナダ',QFA:'カンタス',RCH:'米空軍（輸送）',CNV:'米海軍',PAT:'米陸軍'};
-const TYPE = {A20N:'エアバスA320neo',A21N:'エアバスA321neo',A319:'エアバスA319',A320:'エアバスA320',A321:'エアバスA321',
-  A332:'エアバスA330-200',A333:'エアバスA330-300',A339:'エアバスA330-900',A359:'エアバスA350-900',A35K:'エアバスA350-1000',
-  A388:'エアバスA380',B737:'ボーイング737-700',B738:'ボーイング737-800',B38M:'ボーイング737 MAX 8',B39M:'ボーイング737 MAX 9',
-  B763:'ボーイング767-300',B764:'ボーイング767-400',B772:'ボーイング777-200',B773:'ボーイング777-300',B77W:'ボーイング777-300ER',
-  B77L:'ボーイング777-200LR/F',B744:'ボーイング747-400',B748:'ボーイング747-8',B788:'ボーイング787-8',B789:'ボーイング787-9',
-  B78X:'ボーイング787-10',E170:'エンブラエル170',E75L:'エンブラエル175',E190:'エンブラエル190',E195:'エンブラエル195',
-  DH8D:'ボンバルディアQ400',DH8C:'ボンバルディアQ300',AT75:'ATR72-500',AT76:'ATR72-600',AT46:'ATR42-600',CRJ7:'CRJ700',MD11:'MD-11',
-  BE20:'キングエア（軍用名C-12）',C12:'C-12 ヒューロン',C130:'C-130 ハーキュリーズ',C30J:'C-130J スーパーハーキュリーズ',
-  V22:'V-22 オスプレイ',H60:'UH-60 ブラックホーク',C17:'C-17 グローブマスターIII',C5M:'C-5M スーパーギャラクシー',
-  K35R:'KC-135 ストラトタンカー',KC46:'KC-46 ペガサス',P8:'P-8 ポセイドン',C40:'C-40 クリッパー',
-  GLF5:'ガルフストリームV',GLF6:'ガルフストリームG650',GLEX:'グローバルエクスプレス',
-  EC35:'EC135（ヘリ）',AS50:'AS350（ヘリ）',B06:'ベル206（ヘリ）',R44:'ロビンソンR44（ヘリ）'};
+const $ = id => document.getElementById(id);
+let pos = null, posMarker = null, arw = null, dest = null, destMarker = null, destName = '', via = null, viaMarker = null;
+let pickMode = null, follow = true, busy = false, pending = false, mode = 'to';
+let graph = null, route = null, cands = [], candIdx = 0, cmpCoords = null, cmpText = '', lastRemain = null;
+let headingUp = false, heading = null, hx = 0, hy = 0, lastCompass = 0, lastCam = 0;
+let walk = null, hudTimer = null;
+const errs = [];
+function loadJSON(k, d) { try { return JSON.parse(localStorage.getItem(k) || d); } catch (e) { return JSON.parse(d); } }
+let favs = loadJSON('walk_favs', '[]');
+let tracks = loadJSON('walk_tracks', '[]');
+let areaMeta = loadJSON('walk_area_meta', '[]');
+$('weight').value = localStorage.getItem('walk_weight') || '60';
+$('weight').onchange = () => { try { localStorage.setItem('walk_weight', $('weight').value); } catch (e) {} };
+const weight = () => { const w = Number($('weight').value); return w > 0 ? w : 60; };
 
 // ---------- 共通 ----------
-function showErr(m) { $('err').textContent = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}) + ' ' + m; }
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const norm360 = a => ((a % 360) + 360) % 360;
-const DIRS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
-const dirName = d => DIRS[Math.round(norm360(d) / 45) % 8];
-function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-function circle(c, km) {
-  const pts = [], kx = 111.32 * Math.cos(c[1] * Math.PI / 180);
-  for (let i = 0; i <= 64; i++) { const a = i / 64 * 2 * Math.PI; pts.push([c[0] + km / kx * Math.sin(a), c[1] + km / 110.57 * Math.cos(a)]); }
-  return {type:'Feature', properties:{}, geometry:{type:'Polygon', coordinates:[pts]}};
+function showErr(m) {
+  errs.unshift(nowHM() + ' ' + m); errs.length = Math.min(errs.length, 3);
+  $('err').innerHTML = errs.map(x => `<div>${esc(x)}</div>`).join('');
 }
-const line = (a, b, k) => ({type:'Feature', properties:{k}, geometry:{type:'LineString', coordinates:[a, b]}});
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
+const status = m => { $('status').textContent = m; };
+const pause = () => new Promise(r => setTimeout(r, 30));
 function setData(id, f) { const s = map.getSource(id); if (s) s.setData({type:'FeatureCollection', features:f}); }
-const PLANE = 'M12 2 L13.6 9 L22 13.5 L22 15.5 L13.6 13 L13 19 L15.5 21 L15.5 22.5 L12 21.5 L8.5 22.5 L8.5 21 L11 19 L10.4 13 L2 15.5 L2 13.5 L10.4 9 Z';
-const planeSvg = (c, big) => `<svg width="${big ? 36 : 26}" height="${big ? 36 : 26}" viewBox="0 0 24 24"><path d="${PLANE}" fill="${c}" stroke="#fff" stroke-width="1"/></svg>`;
+const line = c => [{type:'Feature', properties:{}, geometry:{type:'LineString', coordinates:c}}];
+function fmtDist(m) { return m >= 1000 ? (m / 1000).toFixed(1) + 'km' : Math.round(m / 10) * 10 + 'm'; }
+const mins = m => Math.max(1, Math.round(m / SPEED));
+const hm = d => d.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+const nowHM = () => hm(new Date());
+function fmtTime(sec) { const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return h ? `${h}時間${String(m).padStart(2, '0')}分` : `${m}分`; }
+const roundP = p => [Number(p[0].toFixed(5)), Number(p[1].toFixed(5))];
+function twoStep(btn, label, fn) {
+  btn.onclick = () => {
+    if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; btn.style.color = ''; fn(); return; }
+    btn.dataset.armed = '1'; btn.textContent = 'もう一度押すと実行'; btn.style.color = '#c00';
+    setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = label; btn.style.color = ''; } }, 4000);
+  };
+}
 
-// ---------- 距離・方位・太陽 ----------
-const D2R = Math.PI / 180, RE = 6371;
-function gcKm(a, b) {
-  const dLat = (b[1] - a[1]) * D2R, dLon = (b[0] - a[0]) * D2R;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * D2R) * Math.cos(b[1] * D2R) * Math.sin(dLon / 2) ** 2;
-  return 2 * RE * Math.asin(Math.sqrt(h));
+// ---------- 距離・方角の計算 ----------
+function distM(a, b) {
+  const r = Math.PI / 180, x = (b[0] - a[0]) * r * Math.cos((a[1] + b[1]) / 2 * r), y = (b[1] - a[1]) * r;
+  return Math.sqrt(x * x + y * y) * 6371000;
 }
-function gcBrg(a, b) {
-  const dl = (b[0] - a[0]) * D2R, y = Math.sin(dl) * Math.cos(b[1] * D2R);
-  const x = Math.cos(a[1] * D2R) * Math.sin(b[1] * D2R) - Math.sin(a[1] * D2R) * Math.cos(b[1] * D2R) * Math.cos(dl);
-  return norm360(Math.atan2(y, x) / D2R);
+function segDist(p, a, b) {
+  const k = Math.cos(p[1] * Math.PI / 180) * 111320, m = 110540;
+  const ax = (a[0] - p[0]) * k, ay = (a[1] - p[1]) * m, bx = (b[0] - p[0]) * k, by = (b[1] - p[1]) * m;
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  let t = L ? -(ax * dx + ay * dy) / L : 0; t = Math.max(0, Math.min(1, t));
+  const x = ax + t * dx, y = ay + t * dy;
+  return {d: Math.sqrt(x * x + y * y), t};
 }
-// 太陽の位置（簡易式。精度は0.01°程度）
-function sunCore(date) {
-  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
-  const g = (357.528 + 0.9856003 * n) * D2R;
-  const lam = (280.460 + 0.9856474 * n + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
-  const eps = (23.439 - 0.0000004 * n) * D2R;
-  return {n, lam, eps, ra:Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)), dec:Math.asin(Math.sin(eps) * Math.sin(lam))};
+function bearing(a, b) { const k = Math.cos(a[1] * Math.PI / 180); return Math.atan2((b[0] - a[0]) * k, b[1] - a[1]) * 180 / Math.PI; }
+function offsetPt(p, brg, d) {
+  const k = Math.cos(p[1] * Math.PI / 180) * 111320, m = 110540, r = brg * Math.PI / 180;
+  return [p[0] + Math.sin(r) * d / k, p[1] + Math.cos(r) * d / m];
 }
-function sunAt(lat, lon, date) { // 高度（度）と時角（度、正なら午後）
-  const s = sunCore(date), gmst = 280.46061837 + 360.98564736629 * s.n;
-  const H = ((gmst + lon - s.ra / D2R) % 360 + 540) % 360 - 180;
-  const el = Math.asin(Math.sin(lat * D2R) * Math.sin(s.dec) + Math.cos(lat * D2R) * Math.cos(s.dec) * Math.cos(H * D2R)) / D2R;
-  return {el, H};
+function bboxOf(pts, m) {
+  const lons = pts.map(p => p[0]), lats = pts.map(p => p[1]);
+  const s = Math.min(...lats), n = Math.max(...lats), w = Math.min(...lons), e = Math.max(...lons);
+  const dLat = m / 110540, dLon = m / (111320 * Math.cos((s + n) / 2 * Math.PI / 180));
+  return {s: s - dLat, n: n + dLat, w: w - dLon, e: e + dLon};
 }
-function sunVec(date) { const s = sunCore(date); return [Math.cos(s.lam), Math.cos(s.eps) * Math.sin(s.lam), Math.sin(s.eps) * Math.sin(s.lam)]; }
+const inside = (a, b) => a.s >= b.s && a.n <= b.n && a.w >= b.w && a.e <= b.e;
+function cumOf(c) { const cum = [0]; for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + distM(c[i - 1], c[i])); return cum; }
+function pointAt(c, cum, d) {
+  for (let i = 1; i < cum.length; i++) if (cum[i] >= d) {
+    const t = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1);
+    return [c[i - 1][0] + t * (c[i][0] - c[i - 1][0]), c[i - 1][1] + t * (c[i][1] - c[i - 1][1])];
+  }
+  return c[c.length - 1];
+}
 
-// ---------- 機窓から見える目印 ----------
-// [名前, 緯度, 経度, 高さm, 目立ち度]
-const MARKS = [
-  ['富士山',35.3606,138.7274,3776,4],['北岳',35.6744,138.2386,3193,2],['甲斐駒ヶ岳',35.7578,138.2367,2967,1.5],
-  ['仙丈ヶ岳',35.7203,138.1836,3033,1.5],['赤石岳',35.4611,138.1578,3121,1.5],['八ヶ岳',35.9708,138.3703,2899,2],
-  ['金峰山',35.8714,138.6250,2599,1.2],['甲武信ヶ岳',35.9097,138.7283,2475,1],['雲取山',35.8556,138.9439,2017,1.2],
-  ['大菩薩嶺',35.7489,138.8456,2057,1],['浅間山',36.4064,138.5228,2568,2],['谷川岳',36.8375,138.9300,1977,1.5],
-  ['赤城山',36.5603,139.1933,1828,1.5],['榛名山',36.4769,138.8508,1449,1.2],['男体山',36.7650,139.4906,2486,1.5],
-  ['日光白根山',36.7986,139.3758,2578,1.2],['那須岳',37.1250,139.9631,1915,1.2],['筑波山',36.2253,140.1067,877,2],
-  ['丹沢・蛭ヶ岳',35.4806,139.1378,1673,1.5],['大山',35.4406,139.2314,1252,1.2],['箱根山',35.2333,139.0211,1438,1.5],
-  ['天城山',34.8636,139.0006,1406,1.2],['高尾山',35.6253,139.2436,599,1],['御嶽山',35.8933,137.4806,3067,1.5],
-  ['乗鞍岳',36.1064,137.5536,3026,1.5],['槍ヶ岳',36.3419,137.6475,3180,2],['奥穂高岳',36.2894,137.6481,3190,1.5],
-  ['立山',36.5758,137.6194,3015,1.5],['白馬岳',36.7586,137.7586,2932,1.5],['木曽駒ヶ岳',35.7894,137.8044,2956,1.2],
-  ['白山',36.1550,136.7714,2702,1.5],['苗場山',36.8461,138.6900,2145,1],['燧ヶ岳',36.9553,139.2850,2356,1],
-  ['磐梯山',37.6014,140.0722,1816,1.5],['蔵王',38.1436,140.4400,1841,1.2],
-  ['東京スカイツリー',35.7101,139.8107,634,3],['東京タワー',35.6586,139.7454,333,2],['横浜みなとみらい',35.4547,139.6317,296,1.5],
-  ['羽田空港',35.5494,139.7798,10,1.5],['成田空港',35.7720,140.3929,40,1.2],['東京ディズニーリゾート',35.6329,139.8804,50,1.2],
-  ['東京湾アクアライン',35.4800,139.8700,10,1.2],['江の島',35.2992,139.4803,60,1.5],['伊豆大島',34.7244,139.3942,758,1.5],
-  ['三宅島',34.0792,139.5292,775,1],['八丈島',33.1094,139.7900,854,1],['房総半島・鋸山',35.1597,139.8361,329,1],
-  ['犬吠埼',35.7075,140.8686,20,1],['河口湖',35.5167,138.7500,830,1.2],['山中湖',35.4153,138.8706,980,1.2],
-  ['諏訪湖',36.0475,138.0844,759,1.2],['霞ヶ浦',36.0400,140.4000,0,1.2],['浜名湖',34.7344,137.6031,0,1.2],
-  ['佐渡島',38.1047,138.3631,1172,1.2],['相模湖',35.6114,139.1906,170,0.8]
-];
-let markList = null;
-function getMarks() {
-  if (markList) return markList;
-  markList = MARKS.map(m => ({name:m[0], p:[m[2], m[1]], h:m[3], w:m[4]}));
-  // 山座同定アプリで保存した百名山があれば足す（同じサイト内なので読める）
-  const y = lsGet('yama_peaks_v2', null), names = new Set(markList.map(m => m.name));
-  if (y && Array.isArray(y.list)) y.list.forEach(v => {
-    if (v[4] === 1 && !names.has(v[0])) { names.add(v[0]); markList.push({name:v[0], p:[v[1], v[2]], h:v[3] || 0, w:1.2}); }
+// ---------- 道のデータの保存（IndexedDB：ブラウザ内のデータベース） ----------
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('walk_cache', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('areas');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
-  return markList;
 }
-function windowView(p) {
-  if (p.ground || p.altM < 300) return null;
-  const hp = p.altM, cap = hp < 3000 ? 60 : 250, sides = {右:[], 左:[], 前:[], 後:[]};
-  getMarks().forEach(m => {
-    const d = gcKm(p.p, m.p);
-    if (d < 3 || d > cap || d > 3.57 * (Math.sqrt(hp) + Math.sqrt(Math.max(0, m.h)))) return;
-    const rb = norm360(gcBrg(p.p, m.p) - p.track);
-    let side, sub;
-    if (rb >= 20 && rb <= 160) { side = '右'; sub = rb < 70 ? '右前方' : rb > 110 ? '右後方' : '右真横'; }
-    else if (rb >= 200 && rb <= 340) { side = '左'; sub = rb > 290 ? '左前方' : rb < 250 ? '左後方' : '左真横'; }
-    else if (rb < 20 || rb > 340) { side = '前'; sub = '正面'; }
-    else { side = '後'; sub = '真後ろ'; }
-    sides[side].push({name:m.name, sub, d, score:Math.sqrt(d) / (m.w * m.w)});
+async function idbDo(mode, fn) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('areas', mode), q = fn(tx.objectStore('areas'));
+    tx.oncomplete = () => { db.close(); res(q && q.result); };
+    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
   });
-  Object.values(sides).forEach(a => a.sort((x, y) => x.score - y.score).splice(3));
-  const all = [...sides.右, ...sides.左].sort((x, y) => x.score - y.score);
-  return {sides, best:all[0] || null};
 }
-// 機体に夕日（朝日）が当たっているか
-function sunlit(p, now) {
-  if (p.ground || p.altM < 500) return null;
-  const dip = Math.acos(RE / (RE + p.altM / 1000)) / D2R + 0.57;
-  const lit = t => sunAt(p.p[1], p.p[0], t).el > -dip && sunAt(pos[1], pos[0], t).el < -0.83;
-  if (!lit(new Date(now))) return null;
-  let m = 1;
-  while (m <= 90 && lit(new Date(now + m * 60000))) m++;
-  return {kind:sunAt(pos[1], pos[0], new Date(now)).H > 0 ? '夕日' : '朝日', mins:m - 1};
-}
+const cacheGet = id => idbDo('readonly', st => st.get(id));
+const cachePut = (id, v) => idbDo('readwrite', st => st.put(v, id));
+const cacheDel = id => idbDo('readwrite', st => st.delete(id));
+const cacheClear = () => idbDo('readwrite', st => st.clear());
+function saveMeta() { try { localStorage.setItem('walk_area_meta', JSON.stringify(areaMeta)); } catch (e) {} }
 
-// ---------- 地図 ----------
+// ---------- 地図の準備 ----------
 map.on('load', () => {
   const empty = {type:'FeatureCollection', features:[]};
-  map.addSource('range', {type:'geojson', data:empty});
-  map.addLayer({id:'range', type:'line', source:'range',
-    paint:{'line-color':'#1f6fd1', 'line-width':1.5, 'line-dasharray':[2, 2], 'line-opacity':0.6}});
-  map.addSource('route', {type:'geojson', data:empty});
-  map.addLayer({id:'routeFrom', type:'line', source:'route', filter:['==', ['get', 'k'], 'from'],
-    paint:{'line-color':'#999', 'line-width':2}});
-  map.addLayer({id:'routeTo', type:'line', source:'route', filter:['==', ['get', 'k'], 'to'],
-    paint:{'line-color':'#e67e22', 'line-width':3, 'line-dasharray':[2, 1]}});
-  drawRange(); drawSel();
+  ['walked', 'veh', 'net', 'cmp', 'route'].forEach(id => map.addSource(id, {type:'geojson', data:empty}));
+  map.addLayer({id:'walked', type:'line', source:'walked', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':'#2ecc71', 'line-width':['interpolate', ['linear'], ['zoom'], 12, 3, 17, 10], 'line-opacity':0.55}});
+  map.addLayer({id:'veh', type:'line', source:'veh', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':'#e74c3c', 'line-width':['interpolate', ['linear'], ['zoom'], 10, 2, 16, 6], 'line-opacity':0.6}});
+  map.addLayer({id:'net', type:'line', source:'net', paint:{
+    'line-color':['match', ['get', 'k'], 'steps', NET_COLOR.steps, 'iso', NET_COLOR.iso, 'ng', NET_COLOR.ng, NET_COLOR.ok],
+    'line-width':['match', ['get', 'k'], 'steps', 5, 2], 'line-opacity':0.85}});
+  map.addLayer({id:'cmp', type:'line', source:'cmp',
+    paint:{'line-color':'#777', 'line-width':4, 'line-dasharray':[2, 1.5]}});
+  map.addLayer({id:'routeCasing', type:'line', source:'route', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':'#fff', 'line-width':9}});
+  map.addLayer({id:'route', type:'line', source:'route', layout:{'line-cap':'round', 'line-join':'round'},
+    paint:{'line-color':'#1f6fd1', 'line-width':5}});
+  const cv = document.createElement('canvas'); cv.width = cv.height = 24;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#fff'; cx.strokeStyle = '#1f6fd1'; cx.lineWidth = 2;
+  cx.beginPath(); cx.moveTo(6, 5); cx.lineTo(19, 12); cx.lineTo(6, 19); cx.closePath(); cx.fill(); cx.stroke();
+  map.addImage('arrow', cx.getImageData(0, 0, 24, 24), {pixelRatio: 2});
+  map.addLayer({id:'routeArrow', type:'symbol', source:'route', layout:{
+    'symbol-placement':'line', 'symbol-spacing':80, 'icon-image':'arrow',
+    'icon-allow-overlap':true, 'icon-rotation-alignment':'map'}});
+  if (route) setData('route', line(route.coords));
+  if (cmpCoords) setData('cmp', line(cmpCoords));
+  drawNet(); drawTracks();
 });
-function drawRange() { if (pos) setData('range', [circle(pos, Number($('rad').value))]); }
+map.on('error', e => showErr('地図エラー：' + (e.error && e.error.message ? e.error.message : '不明')));
+map.on('dragstart', () => setFollow(false));
+map.on('rotatestart', e => { if (e.originalEvent) setFollow(false); });
+map.on('click', e => {
+  const p = [e.lngLat.lng, e.lngLat.lat];
+  if (pickMode === 'dest') { pickMode = null; destName = ''; setDest(p); }
+  else if (pickMode === 'via') { pickMode = null; setVia(p); }
+});
+
+// ---------- 追従と向き ----------
+function setFollow(v) {
+  follow = v; $('followBtn').textContent = follow ? '追従：ON' : '追従：OFF';
+  if (v) cam();
+}
+function cam() {
+  if (!follow || !pos) return;
+  const o = {center: pos, duration: 600};
+  if (headingUp && heading !== null) o.bearing = heading;
+  lastCam = Date.now(); map.easeTo(o);
+}
+function maybeRotate() {
+  if (!headingUp || !follow || heading === null) return;
+  if (Date.now() - lastCam < 300) return;
+  const d = Math.abs(((heading - map.getBearing()) % 360 + 540) % 360 - 180);
+  if (d >= 3) cam();
+}
+function feedHeading(h, w) {
+  const r = h * Math.PI / 180;
+  hx = hx * (1 - w) + Math.cos(r) * w; hy = hy * (1 - w) + Math.sin(r) * w;
+  heading = (Math.atan2(hy, hx) * 180 / Math.PI + 360) % 360;
+  if (posMarker) { posMarker.setRotation(heading); arw.style.display = 'block'; }
+  maybeRotate();
+}
+window.addEventListener('deviceorientationabsolute', e => {
+  if (e.alpha == null) return;
+  const ang = (screen.orientation && screen.orientation.angle) || 0;
+  lastCompass = Date.now();
+  feedHeading((360 - e.alpha + ang) % 360, 0.15);
+});
+$('followBtn').onclick = () => setFollow(!follow);
+$('headBtn').onclick = () => {
+  headingUp = !headingUp;
+  $('headBtn').textContent = headingUp ? '向き：進行方向' : '向き：北が上';
+  if (headingUp) {
+    if (heading === null) status('向きの情報を待っています（コンパス、または歩き出すと取得します）…');
+    setFollow(true);
+  } else map.easeTo({bearing: 0, duration: 500});
+};
 
 // ---------- 現在地 ----------
-function setPos(p, def, saved) {
-  const first = !pos; pos = p; usingDef = def; usingSaved = !!saved;
-  if (!meMarker) {
-    const el = document.createElement('div');
-    el.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#1e90ff;border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5)';
-    meMarker = new mapboxgl.Marker({element:el}).setLngLat(p).addTo(map);
-  } else meMarker.setLngLat(p);
-  drawRange();
-  if (first) { map.jumpTo({center:p, zoom:9}); start(); }
+if ('geolocation' in navigator) {
+  navigator.geolocation.watchPosition(onPos, e => showErr('位置情報エラー：' + e.message),
+    {enableHighAccuracy: true, maximumAge: 2000, timeout: 20000});
+} else showErr('この端末では位置情報が使えません');
+
+function onPos(p) {
+  const c = p.coords;
+  pos = [c.longitude, c.latitude];
+  if (!posMarker) {
+    const el = document.createElement('div'); el.className = 'me';
+    el.innerHTML = '<div class="arw"></div><div class="dot"></div>';
+    arw = el.querySelector('.arw');
+    posMarker = new mapboxgl.Marker({element: el, rotationAlignment: 'map'}).setLngLat(pos).addTo(map);
+    if (heading !== null) { posMarker.setRotation(heading); arw.style.display = 'block'; }
+    map.jumpTo({center: pos, zoom: 15});
+    if (!dest) status('目的地を検索するか、「地図で指定」を押して地図をタップしてください。');
+    setTimeout(prefetch, 300); // 周りの道のデータを先に準備
+  } else posMarker.setLngLat(pos);
+  if (Date.now() - lastCompass > 3000 && c.heading != null && !isNaN(c.heading) && c.speed > 0.7) feedHeading(c.heading, 0.5);
+  if (walk) walkStep(c);
+  cam();
+  updateRemain();
 }
-// ---------- 機体データ ----------
-function start() { clearInterval(timer); tick(); timer = setInterval(tick, 10000); }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { if (pos) start(); } else clearInterval(timer);
+  if (document.visibilityState === 'visible' && 'geolocation' in navigator)
+    navigator.geolocation.getCurrentPosition(onPos, () => {}, {enableHighAccuracy: true, maximumAge: 0, timeout: 15000});
 });
-$('rad').addEventListener('change', () => { drawRange(); tick(); });
-$('ground').addEventListener('change', () => tick());
-$('sort').addEventListener('change', () => { sortPlanes(); render(); });
 
-async function tfetch(url, ms) {
-  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
-  try { return await fetch(url, {signal:ctl.signal}); } finally { clearTimeout(t); }
-}
-// 中継が2本あるときは交互に使い、片方がだめならもう片方で取る
-async function getAc(la, lo, nm) {
-  const errs = [];
-  for (let k = 0; k < RELAYS.length; k++) {
-    const i = (relayIdx + k) % RELAYS.length, base = RELAYS[i], gas = base.includes('script.google.com');
-    const name = gas ? 'Google' : 'Cloudflare';
-    try {
-      const r = await tfetch(gas ? `${base}?lat=${la}&lon=${lo}&nm=${nm}` : `${base}/ac/${la}/${lo}/${nm}`, 8000);
-      const text = await r.text();
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + text.slice(0, 60));
-      const j = JSON.parse(text);
-      if (j.error) throw new Error(j.error);
-      relayIdx = (i + 1) % RELAYS.length;
-      return {j, name, stale:r.headers.get('X-Stale') === '1'};
-    } catch (e) { errs.push(name + '：' + (e.name === 'AbortError' ? '応答なし' : e.message)); }
+// ---------- 歩行中の記録（距離・速度・カロリー） ----------
+const METS = [[1.5, 1.3], [3.2, 2.8], [4.0, 3.0], [4.8, 3.5], [5.6, 4.3], [6.4, 5.0], [7.2, 7.0]];
+function mets(kmh) {
+  if (kmh <= METS[0][0]) return METS[0][1];
+  for (let i = 1; i < METS.length; i++) if (kmh <= METS[i][0]) {
+    const [a, x] = METS[i - 1], [b, y] = METS[i];
+    return x + (y - x) * (kmh - a) / (b - a);
   }
-  throw new Error(errs.join(' ／ '));
+  return METS[METS.length - 1][1];
 }
-function norm(a, now) {
-  const ground = a.alt_baro === 'ground';
-  const ft = typeof a.alt_geom === 'number' ? a.alt_geom : (typeof a.alt_baro === 'number' ? a.alt_baro : 0);
-  return {hex:a.hex, cs:(a.flight || '').trim(), reg:a.r || '', type:a.t || '', lat:a.lat, lon:a.lon, ground,
-    altM:ground ? 0 : Math.max(0, Math.round(ft * 0.3048)), track:a.track ?? a.true_heading ?? 0, gs:a.gs || 0,
-    mil:!!(a.dbFlags & 1), rate:a.baro_rate ?? a.geom_rate ?? 0, kmh:a.gs ? Math.round(a.gs * 1.852) : null,
-    t0:now - (a.seen_pos || 0) * 1000};
-}
-// 速度と向きから「いまの位置」と「最接近」を計算する
-function place(p, now) {
-  const dt = Math.min(60, Math.max(0, (now - p.t0) / 1000)), tr = p.track * Math.PI / 180;
-  const dkm = p.ground ? 0 : p.gs * 1.852 / 3600 * dt;
-  const lat = p.lat + dkm * Math.cos(tr) / 110.57, lon = p.lon + dkm * Math.sin(tr) / (111.32 * Math.cos(p.lat * Math.PI / 180));
-  p.p = [lon, lat];
-  const kx = 111.32 * Math.cos(pos[1] * Math.PI / 180), e = (lon - pos[0]) * kx, n = (lat - pos[1]) * 110.57;
-  p.dist = Math.hypot(e, n);
-  p.dir = norm360(Math.atan2(e, n) * 180 / Math.PI);
-  p.elev = Math.atan2(p.altM, p.dist * 1000) * 180 / Math.PI;
-  const v = p.gs * 1.852 / 60; // km/分
-  p.cpaT = null; p.cpaKm = null;
-  if (!p.ground && v > 1) {
-    const ve = v * Math.sin(tr), vn = v * Math.cos(tr), t = -(e * ve + n * vn) / (v * v), tt = Math.max(0, t);
-    p.cpaT = t; p.cpaKm = Math.hypot(e + ve * tt, n + vn * tt);
-  }
-}
-function sortPlanes() {
-  if ($('sort').value === 'come') {
-    const key = p => (p.cpaT != null && p.cpaT > 0 && p.cpaKm <= 10) ? p.cpaT : 1e6 + p.dist;
-    planes.sort((a, b) => key(a) - key(b));
-  } else planes.sort((a, b) => a.dist - b.dist);
-}
-async function tick() {
-  if (!pos || busy) return;
-  if (!RELAYS.length) { showErr('中継のアドレスが未設定です（config.js を確認してください）'); return; }
-  busy = true; clearTimeout(retryTimer);
-  const km = Number($('rad').value), nm = Math.ceil(km / 1.852) + 1;
-  try {
-    const got = await getAc(pos[1].toFixed(2), pos[0].toFixed(2), nm), j = got.j, now = Date.now();
-    const base = typeof j.now === 'number' && Math.abs(j.now - now) < 600000 ? j.now : now;
-    const list = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(a => norm(a, base));
-    list.forEach(p => place(p, now));
-    planes = list.filter(p => p.dist <= km && ($('ground').checked || !p.ground));
-    planes.forEach(p => { p.sun = sunlit(p, now); p.win = windowView(p); });
-    sortPlanes();
-    record(planes);
-    notify(planes);
-    render();
-    $('upd').textContent = `更新 ${new Date().toLocaleTimeString('ja-JP')}（${got.name}経由${got.stale ? '・少し前のデータ' : ''}）`;
-    $('err').textContent = '';
-    fetchRoutes(planes).then(changed => { if (changed) render(); });
-  } catch (e) {
-    showErr('機体データの取得に失敗（前の表示を続け、3秒後にやり直します）：' + e.message);
-    retryTimer = setTimeout(tick, 3000);
-  }
-  finally { busy = false; }
-}
-
-// ---------- 行き先（スマホに覚えておく） ----------
-const ROUTE_DAYS = 30, NONE_HOURS = 12;
-function routeEntry(cs) {
-  const r = cs && routes[cs];
-  if (!r) return null;
-  const age = Date.now() - r.t;
-  return (r.none ? age > NONE_HOURS * 3600000 : age > ROUTE_DAYS * 86400000) ? null : r;
-}
-let saveTimer = null;
-function saveRoutes() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const ks = Object.keys(routes);
-    if (ks.length > 3000) ks.sort((a, b) => routes[a].t - routes[b].t).slice(0, ks.length - 3000).forEach(k => delete routes[k]);
-    lsSet('sora_routes_v1', routes);
-  }, 1000);
-}
-const apConv = a => ({iata:a.iata_code || '', name:a.name || '', loc:a.municipality || '',
-  lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3)});
-async function fetchRoutes(list) {
-  if (routeBusy) return false;
-  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)).map(p => p.cs))].slice(0, 10);
-  if (!need.length) return false;
-  routeBusy = true;
-  try {
-    if (!RELAY_CF) return false;
-    const r = await tfetch(`${RELAY_CF}/routes/${need.join(',')}`, 15000);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json(), now = Date.now();
-    need.forEach(cs => {
-      const fr = j[cs];
-      if (fr && fr.origin && fr.destination) routes[cs] = {t:now, a:[apConv(fr.origin), apConv(fr.destination)]};
-      else if (!fr) routes[cs] = {t:now, none:1};
-    });
-    saveRoutes();
-    return true;
-  } catch (e) { showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
-  finally { routeBusy = false; }
-}
-function apName(ap) { return JA_AP[ap.iata] || ap.loc || ap.name || ap.iata || '?'; }
-function routeInfo(p) {
-  const r = routeEntry(p.cs);
-  if (!r || r.none || !r.a) return null;
-  return {text:r.a.map(apName).join(' → '), destName:apName(r.a[1]), orig:[r.a[0].lon, r.a[0].lat], dest:[r.a[1].lon, r.a[1].lat]};
-}
-function routeText(p) {
-  const ri = routeInfo(p);
-  if (ri) return ri.text;
-  if (p.mil) return '行き先不明（軍用機）';
-  return /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs) ? '行き先を調べ中…' : '行き先不明';
-}
-const typeName = p => TYPE[p.type] || p.type || '機種不明';
-const infoText = p => [typeName(p), AIRLINE[p.cs.slice(0, 3)] || '', p.cs || p.reg].filter(Boolean).join('・');
-function nearText(p) {
-  if (p.cpaT == null) return '';
-  if (p.cpaT <= 0) return '遠ざかり中';
-  if (p.cpaT > 20) return '';
-  return (p.cpaT < 0.5 ? 'まもなく' : `あと${Math.round(p.cpaT)}分で`) + `最接近（${p.cpaKm.toFixed(1)}km）`;
-}
-
-// ---------- 一覧と地図の表示 ----------
-function cardHtml(p) {
-  const rate = p.rate > 500 ? '上昇中' : p.rate < -500 ? '下降中' : '';
-  const alt = p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m ${rate}`;
-  const nt = nearText(p), hot = p.cpaT != null && p.cpaT > 0 && p.cpaKm <= 5;
-  const extra = [p.sun ? `<span class="sunt">${p.sun.kind}を浴びています（あと${p.sun.mins}分）</span>` : '',
-    p.win && p.win.best ? esc(p.win.best.sub.slice(0, 1) + '窓に' + p.win.best.name) : ''].filter(Boolean).join('　');
-  return `<div class="card${p.mil ? ' mil' : p.sun ? ' sun' : ''}${p.hex === sel ? ' sel' : ''}" id="c_${esc(p.hex)}" data-hex="${esc(p.hex)}">
-    <div class="where">${p.mil ? '<b style="color:#c0392b">軍用機</b>　' : ''}${dirName(p.dir)} ${p.dist.toFixed(1)}km・見上げ角 ${Math.round(p.elev)}°</div>
-    <div class="route">${esc(routeText(p))}</div>
-    <div class="info">${esc(infoText(p))}</div>
-    <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div>
-    ${extra ? `<div class="small">${extra}</div>` : ''}</div>`;
-}
-function render() {
-  $('head').textContent = `${planes.length}機（半径${$('rad').value}km）` + (usingDef ? '　※現在地が取れないため南大沢付近を中心にしています'
-    : usingSaved ? '　※前回の場所で表示中（現在地を確認しています）' : '');
-  const shown = planes.slice(0, 60);
-  $('list').innerHTML = shown.length ? shown.map(cardHtml).join('') + (planes.length > 60 ? `<div class="small">ほか${planes.length - 60}機は地図に表示しています</div>` : '')
-    : '<div class="small">いま範囲内に飛んでいる機体はありません</div>';
-  $('list').querySelectorAll('.card').forEach(c => c.onclick = () => select(c.dataset.hex, false));
-  const keep = new Set();
-  planes.forEach(p => {
-    keep.add(p.hex);
-    let m = markers.get(p.hex);
-    if (!m) {
-      const el = document.createElement('div'); el.className = 'plane';
-      el.onclick = e => { e.stopPropagation(); select(p.hex, true); };
-      m = new mapboxgl.Marker({element:el, rotationAlignment:'map'}).setLngLat(p.p).addTo(map);
-      markers.set(p.hex, m);
-    }
-    m.setLngLat(p.p).setRotation(p.track || 0);
-    m.getElement().innerHTML = planeSvg(p.mil ? '#c0392b' : p.sun ? '#e6a700' : '#1f6fd1', p.hex === sel);
-  });
-  markers.forEach((m, hex) => { if (!keep.has(hex)) { m.remove(); markers.delete(hex); } });
-  if (sel && !keep.has(sel)) sel = null;
-  drawSel(); renderDetail(false);
-}
-// 更新と更新のあいだも機体を動かす
-setInterval(() => {
-  if (!pos || !planes.length || document.hidden) return;
-  const now = Date.now();
-  planes.forEach(p => { place(p, now); const m = markers.get(p.hex); if (m) m.setLngLat(p.p); });
-  drawSel();
-}, 500);
-function select(hex, scroll) {
-  sel = sel === hex ? null : hex;
-  if (sel) loadPhoto(sel);
-  render(); renderDetail(true);
-  const p = planes.find(x => x.hex === sel);
-  if (!p) return;
-  map.fitBounds(new mapboxgl.LngLatBounds(pos, pos).extend(p.p), {padding:60, maxZoom:12});
-  if (scroll) { const c = $('c_' + hex); if (c) c.scrollIntoView({behavior:'smooth', block:'nearest'}); }
-}
-function drawSel() {
-  const p = planes.find(x => x.hex === sel), ri = p && routeInfo(p);
-  if (!ri) { setData('route', []); return; }
-  setData('route', [line(ri.orig, p.p, 'from'), line(p.p, ri.dest, 'to')]);
-}
-
-// ---------- 写真（Planespotters.net） ----------
-async function loadPhoto(hex) {
-  if (photos.has(hex)) return;
-  photos.set(hex, 'loading');
-  let ph = null;
-  try {
-    const r = await fetch('https://api.planespotters.net/pub/photos/hex/' + encodeURIComponent(hex));
-    if (r.ok) {
-      const x = ((await r.json()).photos || [])[0], src = x && (x.thumbnail_large || x.thumbnail);
-      if (src && /^https:\/\//.test(src.src) && /^https:\/\//.test(x.link)) ph = {src:src.src, link:x.link, by:x.photographer || ''};
-    }
-  } catch (e) {}
-  photos.set(hex, ph);
-  if (sel === hex) renderDetail(true);
-}
-function renderDetail(full) {
-  const d = $('detail'), p = planes.find(x => x.hex === sel);
-  if (!p) { d.style.display = 'none'; d.dataset.hex = ''; return; }
-  d.style.display = 'block';
-  if (full || d.dataset.hex !== sel) {
-    d.dataset.hex = sel;
-    const ph = photos.get(sel);
-    const photoHtml = (ph === 'loading' || ph === undefined) ? '<div class="small">写真を探しています…</div>'
-      : ph ? `<a href="${esc(ph.link)}" target="_blank" rel="noopener"><img src="${esc(ph.src)}" alt="機体の写真"></a><div class="small">Photo © ${esc(ph.by)}（Planespotters.net）</div>`
-      : '<div class="small">この機体の写真は見つかりませんでした</div>';
-    d.innerHTML = `<div class="route" id="dRoute"></div><div class="info" id="dInfo"></div><div class="small" id="dSub"></div><div class="small" id="dWin" style="color:#333"></div>${photoHtml}`;
-  }
-  $('dRoute').textContent = routeText(p);
-  $('dInfo').textContent = infoText(p);
-  $('dSub').textContent = [p.reg && '登録記号 ' + p.reg, p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m`, p.kmh && '時速' + p.kmh + 'km', nearText(p),
-    p.sun && `${p.sun.kind}を浴びています（あと${p.sun.mins}分）`].filter(Boolean).join('・');
-  const w = p.win, fmt = a => a.map(x => `${x.name}（${x.sub} ${Math.round(x.d)}km）`).join('、');
-  $('dWin').innerHTML = !w ? '' : ['右', '左', '前', '後'].filter(k => w.sides[k].length)
-    .map(k => `<b>${{右:'右の窓', 左:'左の窓', 前:'正面', 後:'後方'}[k]}</b>：${esc(fmt(w.sides[k]))}`).join('<br>')
-    + (w.best ? '<br><span class="small">機窓の景色（雲がなければ）</span>' : '<span class="small">機窓から見える目印はありません</span>');
-}
-
-// ---------- 知らせ ----------
-function alertMsg(text, hex, strong) {
-  const el = $('toast');
-  el.textContent = text; el.style.display = 'block'; toastHex = hex;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
-  try { if (navigator.vibrate) navigator.vibrate(strong ? [200, 100, 200] : [60]); } catch (e) {}
-}
-$('toast').onclick = () => { $('toast').style.display = 'none'; if (toastHex && planes.some(p => p.hex === toastHex) && sel !== toastHex) select(toastHex, true); };
-function notify(list) {
-  list.forEach(p => {
-    if (p.ground) return;
-    if ($('ntfMil').checked && p.mil && !notified.has('m' + p.hex)) {
-      notified.add('m' + p.hex);
-      alertMsg(`軍用機が範囲に入りました：${typeName(p)}（${dirName(p.dir)} ${p.dist.toFixed(0)}km）`, p.hex, true);
-    }
-    const over = (p.cpaT != null && p.cpaT > 0 && p.cpaT <= 1 && p.cpaKm <= 3) || p.dist <= 2;
-    if ($('ntfOver').checked && over && !notified.has('o' + p.hex)) {
-      notified.add('o' + p.hex);
-      alertMsg(`まもなく真上付近を通過：${routeText(p)}（${typeName(p)}）`, p.hex, true);
-    }
-  });
-}
-
-// ---------- 機種図鑑 ----------
-function record(list) {
-  const d = today(), wasEmpty = Object.keys(zukan.types).length === 0;
-  let changed = false;
-  list.forEach(p => {
-    if (p.ground) return;
-    const k = p.hex + '|' + d;
-    if (zukan.seen[k]) return;
-    zukan.seen[k] = d; changed = true;
-    const code = p.type || '?';
-    let e = zukan.types[code];
-    if (!e) {
-      e = zukan.types[code] = {n:0, first:d, last:d, mil:0};
-      if (p.type && !wasEmpty) {
-        const cnt = Object.keys(zukan.types).filter(x => x !== '?').length;
-        alertMsg(`新しい機種を発見：${typeName(p)}（図鑑 ${cnt}種目）`, p.hex, false);
+function walkStep(c) {
+  const now = Date.now(), p = [c.longitude, c.latitude];
+  if (c.accuracy <= 50) {
+    if (!walk.last) { walk.last = {p, t: now}; walk.track.pts.push(roundP(p)); }
+    else {
+      const d = distM(walk.last.p, p), dt = (now - walk.last.t) / 1000;
+      if (d >= Math.max(8, c.accuracy * 0.5)) {
+        const v = d / Math.max(dt, 1);
+        if (v <= 4) {
+          walk.dist += d;
+          walk.kcal += mets(v * 3.6) * weight() * dt / 3600 * 1.05;
+          walk.track.pts.push(roundP(p));
+        }
+        walk.last = {p, t: now};
       }
     }
-    e.n++; e.last = d; if (p.mil) e.mil = 1;
-  });
-  if (!changed) return;
-  for (const k in zukan.seen) if (zukan.seen[k] !== d) delete zukan.seen[k];
-  lsSet('sora_zukan_v1', zukan);
-  if ($('zukan').style.display === 'block') renderZukan();
+  }
+  walk.hist.push({t: now, d: walk.dist});
+  while (walk.hist.length && walk.hist[0].t < now - 120000) walk.hist.shift();
+  renderHud();
 }
-function renderZukan() {
-  const ks = Object.keys(zukan.types).sort((a, b) => zukan.types[b].n - zukan.types[a].n);
-  const total = ks.reduce((s, k) => s + zukan.types[k].n, 0);
-  $('zukanSum').textContent = `${ks.filter(k => k !== '?').length}機種・のべ${total}機`;
-  $('zukanBody').innerHTML = ks.length ? ks.map(k => {
-    const e = zukan.types[k], nm = k === '?' ? '機種不明' : (TYPE[k] ? `${TYPE[k]}（${k}）` : k);
-    return `<tr><td>${e.mil ? '<b style="color:#c0392b">軍</b> ' : ''}${esc(nm)}</td><td>${e.n}</td><td>${esc(e.first)}</td><td>${esc(e.last)}</td></tr>`;
-  }).join('') : '<tr><td colspan="4">まだ記録がありません</td></tr>';
+function renderHud() {
+  if (!walk) return;
+  const now = Date.now(), el = (now - walk.t0) / 1000;
+  let v = null;
+  const e = walk.hist.find(x => x.t >= now - 60000);
+  if (e && now - e.t >= 15000) v = (walk.dist - e.d) / ((now - e.t) / 1000);
+  else if (!e && el > 60) v = 0;
+  const pace = (el < 120 || walk.dist < 100) ? SPEED / 60 : Math.max(0.3, walk.dist / el);
+  let top = '';
+  if (lastRemain === null) top = '<div class="big">ルートなし</div>';
+  else if (lastRemain < 20) top = `<div class="big">${route && route.loop ? '出発点に戻りました' : '到着しました'}</div>`;
+  else top = `<div class="big">残り ${fmtDist(lastRemain)}</div><div class="big">到着 ${hm(new Date(now + lastRemain / pace * 1000))}</div>`;
+  $('hud').innerHTML = top +
+    `<div>${v === null ? '—' : (v * 3.6).toFixed(1)} km/h　${Math.round(walk.kcal)} kcal</div>` +
+    `<div class="small" style="margin:0">歩行 ${fmtTime(el)}・${fmtDist(walk.dist)}</div>`;
 }
-$('zukanBtn').onclick = () => { renderZukan(); $('zukan').style.display = 'block'; };
-$('zukanClose').onclick = () => { $('zukan').style.display = 'none'; };
+function resizeSoon() { setTimeout(() => map.resize(), 60); }
+$('walkBtn').onclick = () => {
+  if (!route) return;
+  walk = {t0: Date.now(), dist: 0, kcal: 0, last: null, hist: [], track: {k: 'walk', t0: Date.now(), pts: []}};
+  tracks.push(walk.track);
+  document.body.classList.add('walking'); document.body.classList.remove('menu');
+  $('menuBtn').textContent = '▲メニュー';
+  $('result').textContent = '';
+  resizeSoon(); setFollow(true);
+  clearInterval(hudTimer);
+  let n = 0;
+  hudTimer = setInterval(() => { renderHud(); if (++n % 12 === 0) saveTracks(); }, 5000);
+  renderHud();
+};
+$('menuBtn').onclick = () => {
+  const open = document.body.classList.toggle('menu');
+  $('menuBtn').textContent = open ? '▼閉じる' : '▲メニュー';
+  resizeSoon();
+};
+$('endBtn').onclick = () => {
+  if (!walk) return;
+  const el = (Date.now() - walk.t0) / 1000;
+  const avg = el > 0 ? walk.dist / el * 3.6 : 0;
+  $('result').textContent = `今回の歩行：${fmtTime(el)}・${fmtDist(walk.dist)}・平均${avg.toFixed(1)}km/h・${Math.round(walk.kcal)}kcal`;
+  if (walk.track.pts.length < 2) tracks = tracks.filter(t => t !== walk.track);
+  saveTracks();
+  clearInterval(hudTimer); walk = null;
+  document.body.classList.remove('walking', 'menu');
+  resizeSoon();
+  afterTracksChanged();
+};
 
-// ---------- 空に向ける ----------
-// 背面カメラが向いている方角と仰角
-function orient(a, b, g) {
-  const r = Math.PI / 180, cA = Math.cos(a * r), sA = Math.sin(a * r), cB = Math.cos(b * r), sB = Math.sin(b * r),
-    cG = Math.cos(g * r), sG = Math.sin(g * r);
-  const vx = -(cG * sA * sB + cA * sG), vy = -(sA * sG - cA * cG * sB), vz = -cB * cG;
-  return {az:norm360(Math.atan2(vx, vy) / r), el:Math.asin(Math.max(-1, Math.min(1, vz))) / r};
+// ---------- 歩いた記録（保存・表示） ----------
+function saveTracks() {
+  try { localStorage.setItem('walk_tracks', JSON.stringify(tracks)); return true; }
+  catch (e) { showErr('記録の保存に失敗しました。容量不足の可能性があります。「記録を書き出す」で控えを取ってください'); return false; }
 }
-function onOri(e) {
-  if (e.alpha == null && e.webkitCompassHeading == null) return;
-  let o;
-  if (e.webkitCompassHeading != null) { o = orient(0, e.beta || 0, e.gamma || 0); o.az = e.webkitCompassHeading; }
-  else if (e.type === 'deviceorientationabsolute' || e.absolute) o = orient(e.alpha, e.beta || 0, e.gamma || 0);
-  else return;
-  const r = Math.PI / 180;
-  if (!gotOri) { sx = Math.sin(o.az * r); sy = Math.cos(o.az * r); elevNow = o.el; }
-  gotOri = true;
-  sx = sx * 0.8 + Math.sin(o.az * r) * 0.2; sy = sy * 0.8 + Math.cos(o.az * r) * 0.2;
-  elevNow = elevNow * 0.8 + o.el * 0.2;
-  head = norm360(Math.atan2(sx, sy) / r + offset);
+function splitLines(pts, gap) {
+  const out = []; let cur = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (distM(pts[i - 1], pts[i]) > gap) { if (cur.length > 1) out.push(cur); cur = []; }
+    cur.push(pts[i]);
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
 }
-if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOri);
-else window.addEventListener('deviceorientation', onOri);
-const FOV = 35; // 照準の中心から画面の端までの角度
-function drawScope() {
-  const c = $('scope'), box = $('scopeBox'), dpr = Math.min(2, window.devicePixelRatio || 1);
-  const W = box.clientWidth, H = box.clientHeight;
-  if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#fff'; g.font = '14px sans-serif'; g.textAlign = 'left';
-  if (head == null) {
-    aimHex = null;
-    g.fillText('方位センサーの値を待っています…', 10, 24);
-    g.fillText('動かない場合は、スマホを8の字に数回振ってください', 10, 46);
+function drawTracks() {
+  const fw = [], fv = []; let lw = 0, lv = 0;
+  tracks.forEach(t => {
+    if (!t.pts || t.pts.length < 2) return;
+    const veh = t.k === 'veh';
+    // 乗り物の区間は、記録が途切れた地点どうしを直線で結ぶこともあるので分けない
+    splitLines(t.pts, veh ? Infinity : 80).forEach(c => {
+      const L = cumOf(c)[c.length - 1];
+      if (veh) { lv += L; fv.push(line(c)[0]); } else { lw += L; fw.push(line(c)[0]); }
+    });
+  });
+  setData('walked', $('walkedChk').checked ? fw : []);
+  setData('veh', $('vehChk').checked ? fv : []);
+  const pct = Math.round(JSON.stringify(tracks).length / 5000000 * 100);
+  $('recStat').textContent = `保存済み：歩行 ${(lw / 1000).toFixed(1)}km・乗り物 ${(lv / 1000).toFixed(1)}km（保存容量の約${pct}%）`;
+  if (pct >= 80) showErr('記録の保存容量が残り少なくなっています。「記録を書き出す」で控えを取ってください');
+}
+function afterTracksChanged() {
+  drawTracks();
+  if (graph) markWalked(graph);
+  if (route && cands[candIdx] && cands[candIdx].idx && graph) { route.ur = unexpRatio(graph, cands[candIdx].idx); showSummary(); }
+}
+$('walkedChk').onchange = drawTracks;
+$('vehChk').onchange = drawTracks;
+
+// ---------- GPXの読み込み ----------
+function parseGpx(txt) {
+  const doc = new DOMParser().parseFromString(txt, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('GPXとして読めませんでした');
+  let segs = [...doc.getElementsByTagName('trkseg')].map(s => [...s.getElementsByTagName('trkpt')]);
+  if (!segs.length) segs = [[...doc.getElementsByTagName('trkpt')]];
+  return segs.map(s => s.map(el => {
+    const te = el.getElementsByTagName('time')[0];
+    return {p: [Number(el.getAttribute('lon')), Number(el.getAttribute('lat'))], t: te ? Date.parse(te.textContent) : NaN};
+  }).filter(x => isFinite(x.p[0]) && isFinite(x.p[1])));
+}
+function thin(pts, sp) {
+  const o = [roundP(pts[0])]; let last = pts[0];
+  for (let i = 1; i < pts.length - 1; i++) if (distM(last, pts[i]) >= sp) { o.push(roundP(pts[i])); last = pts[i]; }
+  if (pts.length > 1) o.push(roundP(pts[pts.length - 1]));
+  return o;
+}
+// 各点を「歩行」か「乗り物」に分ける（前後30秒の平均速度で判定）
+function classify(r) {
+  const n = r.length;
+  if (r.some(x => !isFinite(x.t))) return new Array(n).fill('walk');
+  const cum = [0]; for (let i = 1; i < n; i++) cum.push(cum[i - 1] + distM(r[i - 1].p, r[i].p));
+  const cls = new Array(n); let j = 0;
+  for (let i = 0; i < n; i++) {
+    if (j < i) j = i;
+    while (j < n - 1 && r[j].t - r[i].t < 30000) j++;
+    let a = i; while (a > 0 && r[j].t - r[a].t < 30000) a--;
+    const dt = (r[j].t - r[a].t) / 1000;
+    cls[i] = dt > 0 && (cum[j] - cum[a]) / dt > VEH_MS ? 'veh' : 'walk';
+  }
+  // 1分未満・200m未満の短い区間だけ、前後に合わせる（駅での短い停車など）
+  let s = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || cls[i] !== cls[s]) {
+      if (r[i - 1].t - r[s].t < 60000 && cum[i - 1] - cum[s] < 200 && s > 0 && i < n && cls[s - 1] === cls[i])
+        for (let k = s; k < i; k++) cls[k] = cls[i];
+      s = i;
+    }
+  }
+  return cls;
+}
+function processSeg(raw, src) {
+  const q = [];
+  for (const x of raw) {
+    if (!q.length) { q.push(x); continue; }
+    const a = q[q.length - 1], dt = (x.t - a.t) / 1000;
+    if (isFinite(dt) && dt <= 0) continue;
+    if (isFinite(dt) && distM(a.p, x.p) / dt > 100) continue; // 不自然な位置の飛び
+    q.push(x);
+  }
+  // 記録が途切れた区間：300m以上離れていて時速10km超なら「乗り物」として直線で残す
+  const runs = [], out = []; let run = [];
+  for (const x of q) {
+    if (run.length) {
+      const a = run[run.length - 1], dt = (x.t - a.t) / 1000, d = distM(a.p, x.p);
+      if (isFinite(dt) && d > 300 && d / dt > VEH_MS) {
+        runs.push(run); run = [];
+        out.push({k: 'veh', t0: a.t, src, pts: [roundP(a.p), roundP(x.p)]});
+      } else if (isFinite(dt) && dt > 300) { runs.push(run); run = []; }
+    }
+    run.push(x);
+  }
+  if (run.length) runs.push(run);
+  runs.forEach(r => {
+    if (r.length < 2) return;
+    const cls = classify(r); let s = 0;
+    for (let i = 1; i <= r.length; i++) {
+      if (i === r.length || cls[i] !== cls[s]) {
+        const part = r.slice(s, Math.min(i + 1, r.length));
+        if (part.length >= 2) out.push({k: cls[s], t0: isFinite(part[0].t) ? part[0].t : Date.now(), src, pts: thin(part.map(x => x.p), cls[s] === 'veh' ? 50 : 15)});
+        s = i;
+      }
+    }
+  });
+  return out;
+}
+function importBackup(txt) {
+  const o = JSON.parse(txt), arr = Array.isArray(o) ? o : (o.tracks || []);
+  const key = t => `${t.t0}|${t.k || 'walk'}|${t.pts[0]}`;
+  const have = new Set(tracks.filter(t => t.pts && t.pts.length).map(key));
+  let n = 0;
+  arr.forEach(t => {
+    if (!t || !Array.isArray(t.pts) || t.pts.length < 2) return;
+    if (have.has(key(t))) return;
+    tracks.push({k: t.k === 'veh' ? 'veh' : 'walk', t0: t.t0, src: t.src, pts: t.pts}); have.add(key(t)); n++;
+  });
+  return n;
+}
+$('recImport').onclick = () => $('recFile').click();
+$('recFile').onchange = async () => {
+  const files = [...$('recFile').files]; $('recFile').value = '';
+  if (!files.length) return;
+  status('記録を読み込み中…'); await pause();
+  let added = 0, replaced = 0, bad = 0;
+  for (const f of files) {
+    try {
+      const txt = await f.text();
+      if (/^\s*[\[{]/.test(txt)) { added += importBackup(txt); continue; }
+      const segs = parseGpx(txt);
+      const before = tracks.length;
+      tracks = tracks.filter(t => t.src !== f.name);
+      if (tracks.length < before) replaced++;
+      segs.forEach(s => { if (s.length >= 2) { const o = processSeg(s, f.name); tracks.push(...o); added += o.length; } });
+    } catch (e) { bad++; showErr(`${f.name}：${e.message}`); }
+  }
+  saveTracks(); afterTracksChanged();
+  status(`読み込み完了：${files.length - bad}ファイル（区間 ${added}件${replaced ? `、${replaced}ファイルは前回分を置き換え` : ''}）`);
+};
+$('recExport').onclick = () => {
+  const d = new Date(), ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const blob = new Blob([JSON.stringify({app: 'walk', v: 1, tracks})], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `walk-records-${ymd}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  status('記録を書き出しました（ダウンロードフォルダを確認してください）');
+};
+twoStep($('recClear'), '記録をすべて消す', () => {
+  tracks = []; saveTracks(); afterTracksChanged(); status('記録をすべて消しました');
+});
+
+// ---------- 検索（名称：OpenStreetMap／住所：Mapbox） ----------
+$('searchBtn').onclick = doSearch;
+$('search').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+async function doSearch() {
+  const q = $('search').value.trim(); if (!q) return;
+  $('hits').innerHTML = '<div class="small">検索中…</div>';
+  const [a, b] = await Promise.all([searchOsm(q), searchMapbox(q)]);
+  const all = a.concat(b);
+  $('hits').innerHTML = '';
+  all.forEach(h => {
+    const d = document.createElement('div'); d.className = 'hit';
+    d.innerHTML = `<b>${esc(h.name)}</b><br><span class="small">${esc(h.sub)}</span>`;
+    d.onclick = () => { $('hits').innerHTML = ''; destName = h.name; setDest(h.p); };
+    $('hits').appendChild(d);
+  });
+  if (!all.length) $('hits').innerHTML = '<div class="small">見つかりませんでした。別の言い方で試すか「地図で指定」を使ってください。</div>';
+}
+async function searchOsm(q) {
+  try {
+    let vb = '';
+    if (pos) { const d = 0.3; vb = `&viewbox=${(pos[0] - d).toFixed(4)},${(pos[1] + d).toFixed(4)},${(pos[0] + d).toFixed(4)},${(pos[1] - d).toFixed(4)}`; }
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&countrycodes=jp&accept-language=ja&limit=5${vb}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return j.map(x => ({name: x.name || x.display_name.split(',')[0], sub: x.display_name, p: [Number(x.lon), Number(x.lat)]}));
+  } catch (e) { showErr('名称検索エラー：' + e.message); return []; }
+}
+async function searchMapbox(q) {
+  try {
+    const prox = pos ? `&proximity=${pos[0]},${pos[1]}` : '';
+    const j = await (await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}&country=jp&language=ja&limit=5${prox}&access_token=${TOKEN}`)).json();
+    return (j.features || []).map(f => ({name: f.properties.name || '', sub: f.properties.full_address || '', p: f.geometry.coordinates}));
+  } catch (e) { showErr('住所検索エラー：' + e.message); return []; }
+}
+
+// ---------- 目的地・経由地・周回 ----------
+$('pickBtn').onclick = () => { pickMode = 'dest'; status('地図上の目的地をタップしてください。'); };
+$('viaBtn').onclick = () => {
+  if (!dest || mode !== 'to') { status('先に目的地を設定してください。'); return; }
+  pickMode = 'via'; status('通りたい場所（経由地）をタップしてください。');
+};
+function clearVia() {
+  via = null; if (viaMarker) { viaMarker.remove(); viaMarker = null; }
+  $('viaClear').disabled = true;
+}
+function setDest(p) {
+  dest = p; clearVia();
+  if (destMarker) destMarker.remove();
+  destMarker = new mapboxgl.Marker({color: '#c0392b'}).setLngLat(p).addTo(map);
+  $('recalcBtn').disabled = false; $('favAdd').disabled = false;
+  calc('to');
+}
+function setVia(p) {
+  via = p;
+  if (viaMarker) viaMarker.remove();
+  viaMarker = new mapboxgl.Marker({color: '#555', scale: 0.8}).setLngLat(p).addTo(map);
+  $('viaClear').disabled = false;
+  calc('to');
+}
+$('viaClear').onclick = () => { clearVia(); calc('to'); };
+$('recalcBtn').onclick = () => calc();
+$('ext').onchange = () => { if (dest && mode === 'to') calc('to'); };
+$('unexp').onchange = () => { if (route) calc(); };
+$('loopBtn').onclick = () => {
+  dest = null; clearVia();
+  if (destMarker) { destMarker.remove(); destMarker = null; }
+  $('favAdd').disabled = true; $('recalcBtn').disabled = false;
+  calc('loop');
+};
+$('altBtn').onclick = () => {
+  if (cands.length < 2) return;
+  candIdx = (candIdx + 1) % cands.length; showRoute();
+};
+$('cmpChk').onchange = () => {
+  if ($('cmpChk').checked) { if (route && !route.loop) fetchCmp(route.pts); }
+  else { cmpCoords = null; cmpText = ''; setData('cmp', []); showSummary(); }
+};
+$('netChk').onchange = () => {
+  if ($('netChk').checked && !graph) status('ルートを一度計算すると、その範囲の道が表示されます。');
+  drawNet();
+};
+$('netReset').onclick = async () => {
+  graph = null; areaMeta = []; saveMeta();
+  try { await cacheClear(); } catch (e) {}
+  drawNet();
+  status('保存していた道のデータを消しました。次の計算で取り直します。');
+  if (route) calc();
+};
+
+// ---------- お気に入り ----------
+function saveFavs() {
+  try { localStorage.setItem('walk_favs', JSON.stringify(favs)); } catch (e) { showErr('お気に入りの保存に失敗しました'); }
+  renderFavs();
+}
+function renderFavs() {
+  $('favBar').innerHTML = favs.map((f, i) => `<button class="fav" data-go="${i}">★${esc(f.name)}</button>`).join('');
+  $('favBar').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const f = favs[Number(b.dataset.go)]; destName = f.name; $('hits').innerHTML = ''; setDest(f.p);
+  });
+  $('favList').innerHTML = favs.length
+    ? favs.map((f, i) => `<div>${esc(f.name)}　<button data-del="${i}">削除</button></div>`).join('')
+    : '<div class="small">まだ登録がありません</div>';
+  $('favList').querySelectorAll('button').forEach(b =>
+    twoStep(b, '削除', () => { favs.splice(Number(b.dataset.del), 1); saveFavs(); }));
+}
+$('favAdd').onclick = () => {
+  if (!dest) return;
+  $('favName').value = destName || '';
+  $('favForm').style.display = 'block'; $('favName').focus();
+};
+$('favCancel').onclick = () => { $('favForm').style.display = 'none'; };
+$('favSave').onclick = () => {
+  const name = $('favName').value.trim();
+  if (!name || !dest) return;
+  favs.push({name, p: dest}); saveFavs();
+  $('favForm').style.display = 'none'; status(name + 'を登録しました。');
+};
+$('favExport').onclick = () => { $('favText').value = JSON.stringify(favs); };
+$('favImport').onclick = () => {
+  try {
+    const a = JSON.parse($('favText').value);
+    if (!Array.isArray(a)) throw 0;
+    favs = a.filter(x => x && x.name && Array.isArray(x.p)); saveFavs();
+    status('お気に入りを読み込みました。');
+  } catch (e) { showErr('読み込めない形式です'); }
+};
+renderFavs();
+
+// ---------- 道のデータ（OpenStreetMap） ----------
+async function fetchOverpass(bb) {
+  const box = [bb.s, bb.w, bb.n, bb.e].map(v => v.toFixed(5)).join(',');
+  const q = `[out:json][timeout:90];way["highway"~"${HW}"](${box});out body;>;out skel qt;`;
+  let last = null;
+  for (const url of OVERPASS) {
+    try {
+      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 100000);
+      const r = await fetch(url, {method:'POST', body:'data=' + encodeURIComponent(q),
+        headers:{'Content-Type':'application/x-www-form-urlencoded'}, signal: ctl.signal});
+      clearTimeout(tm);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return (await r.json()).elements || [];
+    } catch (e) { last = e; }
+  }
+  throw new Error('道のデータを取得できませんでした（' + (last && last.name === 'AbortError' ? '時間切れ' : last.message) + '）');
+}
+// 必要な範囲の道の網を用意する（保存済みがあればそれを使い、なければ取り寄せて保存）
+async function ensureGraph(need, fetchBB) {
+  if (graph && inside(need, graph.bb)) return;
+  const now = Date.now(), life = CACHE_DAYS * 864e5;
+  const hit = areaMeta.filter(a => inside(need, a.bb) && now - a.t < life).sort((a, b) => b.t - a.t)[0];
+  let els = null, bb = fetchBB, from = '';
+  if (hit) {
+    try {
+      status('保存済みの道のデータを読み込み中…'); await pause();
+      els = await cacheGet(hit.id);
+      if (els) { bb = hit.bb; hit.used = now; saveMeta(); from = `保存済みデータ（${Math.floor((now - hit.t) / 864e5)}日前に取得）`; }
+    } catch (e) { els = null; }
+  }
+  if (!els) {
+    status('道のデータを取得中…（数秒〜数十秒かかります）'); await pause();
+    els = await fetchOverpass(fetchBB); from = '新しく取得';
+    try {
+      const id = 'a' + now;
+      await cachePut(id, els);
+      areaMeta.push({id, bb: fetchBB, t: now, used: now});
+      const drop = areaMeta.filter(a => now - a.t >= life);
+      areaMeta = areaMeta.filter(a => now - a.t < life).sort((a, b) => b.used - a.used);
+      drop.push(...areaMeta.splice(CACHE_MAX));
+      saveMeta();
+      drop.forEach(a => cacheDel(a.id).catch(() => {}));
+    } catch (e) { /* 保存できなくても計算は続ける */ }
+  }
+  status('道の網を組み立て中…'); await pause();
+  graph = buildGraph(els); graph.bb = bb; graph.from = from;
+  markWalked(graph);
+  drawNet();
+}
+// 起動直後に、現在地の周りの道のデータを先に用意しておく
+async function prefetch() {
+  if (busy || graph || !pos) return;
+  busy = true;
+  try { await ensureGraph(bboxOf([pos], 1500), bboxOf([pos], 2000)); if (!route) status('周辺の道のデータを準備しました。目的地を設定してください。'); }
+  catch (e) { status(''); }
+  finally { busy = false; if (pending) { pending = false; calc(); } }
+}
+function walkable(t) {
+  t = t || {};
+  const foot = t.foot || '', access = t.access || '';
+  if (/^(no|private)$/.test(foot)) return false;
+  if (/^(no|private)$/.test(access) && !/^(yes|designated|permissive)$/.test(foot)) return false;
+  if (t.motorroad === 'yes') return false;
+  return true;
+}
+const edgeKey = (a, b) => a < b ? a + '_' + b : b + '_' + a;
+function buildGraph(els) {
+  const idx = new Map(), lon = [], lat = [], ways = [], edges = [], emap = new Map();
+  els.forEach(e => { if (e.type === 'node') { idx.set(e.id, lon.length); lon.push(e.lon); lat.push(e.lat); } });
+  const adj = lon.map(() => []);
+  els.forEach(e => {
+    if (e.type !== 'way' || !e.nodes) return;
+    const n = e.nodes.map(id => idx.get(id)).filter(i => i !== undefined);
+    if (n.length < 2) return;
+    const ok = walkable(e.tags);
+    ways.push({n, k: !ok ? 'ng' : (e.tags && e.tags.highway === 'steps' ? 'steps' : 'ok')});
+    if (!ok) return;
+    for (let i = 0; i < n.length - 1; i++) {
+      const a = n[i], b = n[i + 1];
+      if (a === b || emap.has(edgeKey(a, b))) continue;
+      const ed = {a, b, w: distM([lon[a], lat[a]], [lon[b], lat[b]]), k: 0};
+      edges.push(ed); emap.set(edgeKey(a, b), ed);
+      adj[a].push([b, ed]); adj[b].push([a, ed]);
+    }
+  });
+  const comp = new Int32Array(lon.length).fill(-1);
+  let cid = 0, main = -1, mainSize = 0;
+  for (let s = 0; s < lon.length; s++) {
+    if (comp[s] >= 0 || !adj[s].length) continue;
+    let size = 0; const st = [s]; comp[s] = cid;
+    while (st.length) {
+      const v = st.pop(); size++;
+      for (const [u] of adj[v]) if (comp[u] < 0) { comp[u] = cid; st.push(u); }
+    }
+    if (size > mainSize) { mainSize = size; main = cid; }
+    cid++;
+  }
+  return {lon, lat, adj, comp, main, ways, edges, emap};
+}
+function markWalked(g) {
+  g.edges.forEach(e => { e.k = 0; });
+  const bb = g.bb, kx = Math.cos((bb.s + bb.n) / 2 * Math.PI / 180) * 111320, ky = 110540, C = 40;
+  const cell = p => [Math.floor((p[0] - bb.w) * kx / C), Math.floor((p[1] - bb.s) * ky / C)];
+  const inBB = p => p[0] >= bb.w && p[0] <= bb.e && p[1] >= bb.s && p[1] <= bb.n;
+  const grid = new Map(); let nseg = 0;
+  tracks.forEach(t => {
+    if (t.k === 'veh' || !t.pts) return;
+    for (let i = 1; i < t.pts.length; i++) {
+      const a = t.pts[i - 1], b = t.pts[i];
+      if (!inBB(a) && !inBB(b)) continue;
+      if (distM(a, b) > 80) continue;
+      const ca = cell(a), cb = cell(b);
+      for (let x = Math.min(ca[0], cb[0]); x <= Math.max(ca[0], cb[0]); x++)
+        for (let y = Math.min(ca[1], cb[1]); y <= Math.max(ca[1], cb[1]); y++) {
+          const k = x + ',' + y; let l = grid.get(k); if (!l) { l = []; grid.set(k, l); } l.push([a, b]);
+        }
+      nseg++;
+    }
+  });
+  if (!nseg) return;
+  const near = p => {
+    const [cx, cy] = cell(p);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const l = grid.get((cx + dx) + ',' + (cy + dy));
+      if (l) for (const [a, b] of l) if (segDist(p, a, b).d <= 15) return true;
+    }
+    return false;
+  };
+  g.edges.forEach(e => {
+    const A = [g.lon[e.a], g.lat[e.a]], B = [g.lon[e.b], g.lat[e.b]];
+    const n = Math.max(1, Math.ceil(e.w / 20)); let hit = 0;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      if (near([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t])) hit++;
+    }
+    if (hit / n >= 0.5) e.k = 1;
+  });
+}
+function drawNet() {
+  if (!$('netChk').checked || !graph) { setData('net', []); return; }
+  const g = graph, f = [];
+  g.ways.forEach(w => {
+    let k = w.k;
+    if (k !== 'ng' && g.comp[w.n[0]] !== g.main) k = 'iso';
+    f.push({type:'Feature', properties:{k}, geometry:{type:'LineString', coordinates: w.n.map(i => [g.lon[i], g.lat[i]])}});
+  });
+  setData('net', f);
+}
+function snap(g, p) {
+  let bi = -1, bd = 1e12;
+  for (let i = 0; i < g.lon.length; i++) {
+    if (g.comp[i] !== g.main) continue;
+    const d = distM(p, [g.lon[i], g.lat[i]]);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return {i: bi, d: bd};
+}
+
+// ---------- 経路計算（A*法） ----------
+class Heap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  push(k, v) {
+    const a = this.a; a.push([k, v]); let i = a.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (a[p][0] <= a[i][0]) break; [a[p], a[i]] = [a[i], a[p]]; i = p; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last; let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1; let m = i;
+        if (l < a.length && a[l][0] < a[m][0]) m = l;
+        if (r < a.length && a[r][0] < a[m][0]) m = r;
+        if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; i = m;
+      }
+    }
+    return top;
+  }
+}
+function astar(g, s, t) {
+  const mult = Number($('unexp').value) || 1;
+  const n = g.lon.length, d = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+  const tp = [g.lon[t], g.lat[t]], h = i => distM([g.lon[i], g.lat[i]], tp);
+  const H = new Heap(); d[s] = 0; H.push(h(s), s);
+  while (H.size) {
+    const v = H.pop()[1];
+    if (done[v]) continue; done[v] = 1;
+    if (v === t) break;
+    for (const [u, e] of g.adj[v]) {
+      const nd = d[v] + (e.k ? e.w * mult : e.w);
+      if (nd < d[u]) { d[u] = nd; prev[u] = v; H.push(nd + h(u), u); }
+    }
+  }
+  if (d[t] === Infinity) return null;
+  const path = [];
+  for (let v = t; v !== -1; v = prev[v]) path.push(v);
+  return path.reverse();
+}
+const toCoords = (g, idx) => idx.map(i => [g.lon[i], g.lat[i]]);
+function pathLen(g, idx) {
+  let L = 0;
+  for (let i = 1; i < idx.length; i++) L += distM([g.lon[idx[i - 1]], g.lat[idx[i - 1]]], [g.lon[idx[i]], g.lat[idx[i]]]);
+  return L;
+}
+function unexpRatio(g, idx) {
+  let L = 0, U = 0;
+  for (let i = 1; i < idx.length; i++) {
+    const e = g.emap.get(edgeKey(idx[i - 1], idx[i])); if (!e) continue;
+    L += e.w; if (!e.k) U += e.w;
+  }
+  return L ? U / L : 1;
+}
+function legsPath(g, nodes) {
+  let p = [];
+  for (let k = 0; k < nodes.length - 1; k++) {
+    const seg = astar(g, nodes[k], nodes[k + 1]);
+    if (!seg) return null;
+    p = p.concat(k ? seg.slice(1) : seg);
+  }
+  return p;
+}
+function edgeSet(idx) { const s = new Set(); for (let i = 1; i < idx.length; i++) s.add(edgeKey(idx[i - 1], idx[i])); return s; }
+function overlapRatio(g, idx) {
+  const seen = new Set(); let dup = 0, L = 0;
+  for (let i = 1; i < idx.length; i++) {
+    const a = idx[i - 1], b = idx[i], k = edgeKey(a, b);
+    const d = distM([g.lon[a], g.lat[a]], [g.lon[b], g.lat[b]]);
+    L += d; if (seen.has(k)) dup += d; else seen.add(k);
+  }
+  return L ? dup / L : 0;
+}
+function pickBest(list, tol) {
+  list = list.filter(c => c.err <= tol).sort((a, b) => a.err - b.err);
+  const out = [];
+  for (const c of list) {
+    c.es = edgeSet(c.idx);
+    const similar = out.some(o => {
+      let n = 0; c.es.forEach(k => { if (o.es.has(k)) n++; });
+      return n / Math.min(c.es.size, o.es.size) > 0.7;
+    });
+    if (similar) continue;
+    out.push(c); if (out.length >= 3) break;
+  }
+  return out;
+}
+
+// ---------- ルートを出す ----------
+function clearRoute() {
+  route = null; cands = []; candIdx = 0; lastRemain = null;
+  $('altBtn').disabled = true; $('walkBtn').disabled = true;
+  cmpCoords = null; cmpText = ''; setData('route', []); setData('cmp', []); $('sub').innerHTML = '';
+}
+async function calc(m) {
+  if (m) mode = m;
+  if (busy) { pending = true; return; }
+  if (!pos) { showErr('現在地がまだ取得できていません。少し待ってから「再計算」を押してください。'); return; }
+  if (mode === 'to' && !dest) return;
+  busy = true;
+  try { if (mode === 'loop') await calcLoop(); else await calcTo(); }
+  catch (e) { showErr(e.message); status(''); }
+  finally {
+    busy = false;
+    if (pending) { pending = false; calc(); }
+  }
+}
+async function calcTo() {
+  const from = pos.slice(), straight = distM(from, dest);
+  if (straight > MAX_M) {
+    clearRoute();
+    $('rem').textContent = '徒歩の範囲を超えています';
+    $('sub').textContent = `直線で${fmtDist(straight)}あります。降りる駅を目的地にしてください。`;
     return;
   }
-  const cx = W / 2, cy = H / 2, sc = Math.min(W, H) / 2 / FOV;
-  const ce = Math.cos(Math.min(80, Math.abs(elevNow)) * Math.PI / 180);
-  const dAz = az => ((az - head + 540) % 360) - 180;
-  const toXY = (az, el) => [cx + dAz(az) * ce * sc, cy - (el - elevNow) * sc];
-  // 地面と地平線、方角
-  const hy = cy + elevNow * sc;
-  if (hy < H) {
-    g.fillStyle = '#1c2b1c'; g.fillRect(0, Math.max(0, hy), W, H - Math.max(0, hy));
-    g.strokeStyle = '#6b8e6b'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, hy); g.lineTo(W, hy); g.stroke();
+  const X = via ? 0 : Number($('ext').value);
+  const pts = [from].concat(via ? [via] : [], [dest]);
+  // 自前の計算が終わるまでの目安として、Mapboxの徒歩ルートを先に表示
+  cmpText = ''; cmpCoords = null; setData('cmp', []);
+  if ($('cmpChk').checked) fetchCmp(pts);
+  if (!walk) { const b = new mapboxgl.LngLatBounds(); pts.forEach(p => b.extend(p)); setFollow(false); map.fitBounds(b, {padding: 60, maxZoom: 16}); }
+  const extra = X ? X / 2 + 300 : 0;
+  await ensureGraph(bboxOf(pts, MARGIN + extra), bboxOf(pts, MARGIN + extra + 500));
+  status('経路を計算中…'); await pause();
+  const g = graph, sn = pts.map(p => snap(g, p));
+  if (sn.some(s => s.i < 0)) throw new Error('近くに歩ける道が見つかりません');
+  const base = legsPath(g, sn.map(s => s.i));
+  if (!base) throw new Error('ルートが見つかりませんでした');
+  const baseLen = pathLen(g, base);
+  const baseTotal = baseLen + sn[0].d + sn[sn.length - 1].d;
+  let list = [{idx: base}], msg = '';
+  if (X) {
+    status('遠回りの候補を探しています…'); await pause();
+    list = extendCands(g, base, baseLen, X, sn[0].i, sn[sn.length - 1].i);
+    if (!list.length) { list = [{idx: base}]; msg = '　※指定の距離に近い遠回りが見つからず、最短ルートを表示しています'; }
   }
-  g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#9fc59f';
-  for (let k = 0; k < 8; k++) { const [x] = toXY(k * 45, 0); if (x > -20 && x < W + 20) g.fillText(DIRS[k], x, Math.min(H - 40, Math.max(16, hy + 16))); }
-  // 照準
-  g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1;
-  g.beginPath(); g.arc(cx, cy, 10 * sc, 0, 7); g.stroke();
-  g.beginPath(); g.moveTo(cx - 12, cy); g.lineTo(cx + 12, cy); g.moveTo(cx, cy - 12); g.lineTo(cx, cy + 12); g.stroke();
-  // 機体
-  let best = null, bd = 12;
-  g.textAlign = 'left';
-  planes.forEach(p => {
-    if (p.ground) return;
-    const da = dAz(p.dir), ang = Math.hypot(da * ce, p.elev - elevNow);
-    if (ang < bd) { bd = ang; best = p; }
-    const [x, y] = toXY(p.dir, p.elev);
-    if (x < -60 || x > W + 60 || y < -20 || y > H + 20) return;
-    g.fillStyle = p.mil ? '#ff6b5b' : p.sun ? '#ffc93c' : '#5bb8ff';
-    g.beginPath(); g.arc(x, y, p.hex === sel ? 7 : 5, 0, 7); g.fill();
-    const ri = routeInfo(p);
-    g.fillStyle = '#fff'; g.font = '12px sans-serif';
-    g.fillText((p.cs || p.reg || '?') + (ri ? ' ' + ri.destName + '行き' : p.mil ? ' 軍用機' : ''), x + 9, y + 4);
-  });
-  // 宇宙ステーション
-  let issAim = false;
-  if (issNow && issNow.el > -5) {
-    const ang = Math.hypot(dAz(issNow.az) * ce, issNow.el - elevNow), [x, y] = toXY(issNow.az, issNow.el);
-    if (x > -60 && x < W + 60 && y > -20 && y < H + 20) {
-      g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x, y - 8); g.lineTo(x + 8, y); g.lineTo(x, y + 8); g.lineTo(x - 8, y); g.closePath(); g.fill();
-      g.font = 'bold 12px sans-serif'; g.fillText('ISS 国際宇宙ステーション', x + 11, y + 4);
+  cands = list.map(c => ({idx: c.idx, coords: [from].concat(toCoords(g, c.idx), [dest]), pts,
+    baseTotal: X ? baseTotal : null, loop: false, ur: unexpRatio(g, c.idx)}));
+  candIdx = 0; $('altBtn').disabled = cands.length < 2;
+  showRoute();
+  if (via && Number($('ext').value)) msg += '　※経由地があるため延長は使っていません';
+  if (sn[0].d > 200) msg += `　※現在地から最寄りの道まで${fmtDist(sn[0].d)}あります`;
+  status(`計算完了 ${nowHM()}（道のデータ：${g.from}）${msg}`);
+}
+function extendCands(g, base, S, X, s, t) {
+  const c = toCoords(g, base), cum = cumOf(c), target = S + X;
+  const h0 = Math.sqrt(Math.max(0, (target / 2) ** 2 - (S / 2) ** 2)) / 1.2;
+  const brg = bearing(c[0], c[c.length - 1]);
+  const tries = [];
+  [0.6, 0.85, 1.1].forEach(f => [-90, 90].forEach(side => tries.push({tp: 0.5, f, side})));
+  [0.3, 0.7].forEach(tp => [-90, 90].forEach(side => tries.push({tp, f: 0.85, side})));
+  const out = [];
+  for (const tr of tries) {
+    const v = offsetPt(pointAt(c, cum, S * tr.tp), brg + tr.side, h0 * tr.f);
+    const sv = snap(g, v); if (sv.i < 0) continue;
+    const idx = legsPath(g, [s, sv.i, t]); if (!idx) continue;
+    if (overlapRatio(g, idx) > 0.2) continue;
+    out.push({idx, err: Math.abs(pathLen(g, idx) - target)});
+  }
+  return pickBest(out, Math.max(200, X * 0.4));
+}
+async function calcLoop() {
+  const T = Number($('loopKm').value) * 1000, from = pos.slice();
+  const r = T / (3 * 1.25);
+  cmpText = ''; cmpCoords = null; setData('cmp', []);
+  await ensureGraph(bboxOf([from], r * 1.3 + MARGIN), bboxOf([from], r * 1.3 + MARGIN + 500));
+  status('周回コースを探しています…'); await pause();
+  const g = graph, s0 = snap(g, from);
+  if (s0.i < 0) throw new Error('近くに歩ける道が見つかりません');
+  const out = [];
+  for (let k = 0; k < 8; k++) {
+    const th = k * 45;
+    for (const f of [0.8, 1.0]) {
+      const a = snap(g, offsetPt(from, th, r * f)), b = snap(g, offsetPt(from, th + 60, r * f));
+      if (a.i < 0 || b.i < 0) continue;
+      const idx = legsPath(g, [s0.i, a.i, b.i, s0.i]); if (!idx) continue;
+      if (overlapRatio(g, idx) > 0.3) continue;
+      out.push({idx, err: Math.abs(pathLen(g, idx) - T)});
     }
-    if (ang < 12 && (!best || ang < bd)) issAim = true;
   }
-  aimHex = !issAim && best ? best.hex : null;
-  if (best && !issAim) {
-    const [x, y] = toXY(best.dir, best.elev);
-    g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 14, 0, 7); g.stroke();
-  }
-  // 文字
-  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, 24); g.fillRect(0, H - 46, W, 46);
-  g.fillStyle = '#fff'; g.font = '13px sans-serif';
-  g.fillText(`向き：${dirName(head)} ${Math.round(head)}°　仰角 ${Math.round(elevNow)}°`, 8, 17);
-  if (issAim) {
-    const vis = issVisible(issNow, new Date());
-    g.font = 'bold 15px sans-serif'; g.fillStyle = '#ffffff';
-    g.fillText('照準：国際宇宙ステーション', 8, H - 26);
-    g.font = '12px sans-serif';
-    g.fillText(`高度${Math.round(issNow.alt)}km・${Math.round(issNow.range)}km先・${vis ? '肉眼で見えます' : '肉眼では見えない条件です'}`, 8, H - 9);
-  } else if (best) {
-    g.font = 'bold 15px sans-serif'; g.fillStyle = best.mil ? '#ff8a7a' : '#ffd54f';
-    g.fillText('照準：' + routeText(best), 8, H - 26);
-    g.font = '12px sans-serif'; g.fillStyle = '#fff';
-    g.fillText(`${infoText(best)}・高度${best.altM.toLocaleString()}m・${best.dist.toFixed(1)}km（タップで詳細）`, 8, H - 9);
-  } else {
-    g.font = '13px sans-serif'; g.fillStyle = '#ccc';
-    g.fillText('照準の近くに機体はありません', 8, H - 18);
-  }
+  const list = pickBest(out, Math.max(300, T * 0.25));
+  if (!list.length) { clearRoute(); throw new Error('条件に合う周回コースが見つかりませんでした。距離を変えて試してください'); }
+  cands = list.map(c => ({idx: c.idx, coords: [from].concat(toCoords(g, c.idx), [from]), pts: [from],
+    baseTotal: null, loop: true, ur: unexpRatio(g, c.idx)}));
+  candIdx = 0; $('altBtn').disabled = cands.length < 2;
+  showRoute();
+  status(`周回コース 計算完了 ${nowHM()}（道のデータ：${g.from}）矢印の向きに歩いてください`);
 }
-function scopeLoop() { if (!sky) return; drawScope(); requestAnimationFrame(scopeLoop); }
-function setSky(on) {
-  sky = on;
-  document.body.classList.toggle('skyOn', on);
-  $('skyBtn').classList.toggle('on', on);
-  $('skyBtn').textContent = on ? '空に向ける：ON' : '空に向ける';
-  $('skyCtl').style.display = on ? 'block' : 'none';
-  if (on) {
-    requestAnimationFrame(scopeLoop);
-    setTimeout(() => { if (sky && !gotOri) $('skyInfo').textContent = 'この端末では方位センサーが使えないようです'; }, 1500);
-  } else map.resize();
-}
-$('skyBtn').onclick = () => setSky(!sky);
-$('scope').onclick = () => { if (aimHex && sel !== aimHex) select(aimHex, true); };
-function showOffset() { $('offVal').textContent = (offset > 0 ? '+' : '') + offset + '°'; }
-function changeOffset(d) { offset += d; showOffset(); lsSet('sora_offset', offset); }
-$('offMinus').onclick = () => changeOffset(-5);
-$('offPlus').onclick = () => changeOffset(5);
-showOffset();
-
-// ---------- 国際宇宙ステーション ----------
-let issRec = null, issNow = null, issPasses = [], issPassAt = null, issPassPos = null, issBusy = false, issMsg = '', issMarker = null;
-const issNotified = new Set(), WDAY = ['日', '月', '火', '水', '木', '金', '土'];
-async function loadTle() {
-  const c = lsGet('sora_tle', null);
-  if (c && Date.now() - c.t < 12 * 3600000) return c;
-  const lines = t => t.trim().split(/\r?\n/).map(s => s.trim()).filter(s => /^[12] 25544/.test(s));
-  const srcs = [
-    async () => { const j = await (await tfetch('https://api.wheretheiss.at/v1/satellites/25544/tles', 8000)).json(); return [j.line1, j.line2]; },
-    async () => lines(await (await tfetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE', 8000)).text()),
-    async () => { if (!RELAY_CF) return []; return lines(await (await tfetch(RELAY_CF + '/tle', 10000)).text()); }
-  ];
-  for (const f of srcs) {
-    try {
-      const [l1, l2] = await f();
-      if (/^1 25544/.test(l1 || '') && /^2 25544/.test(l2 || '')) { const o = {t:Date.now(), l1, l2}; lsSet('sora_tle', o); return o; }
-    } catch (e) {}
-  }
-  return c; // 取れなければ古いものを使う
-}
-function issLook(date) {
-  const pv = satellite.propagate(issRec, date);
-  if (!pv || !pv.position) return null;
-  const gmst = satellite.gstime(date), ecf = satellite.eciToEcf(pv.position, gmst);
-  const la = satellite.ecfToLookAngles({longitude:pos[0] * D2R, latitude:pos[1] * D2R, height:0.1}, ecf);
-  const gd = satellite.eciToGeodetic(pv.position, gmst);
-  return {az:norm360(la.azimuth / D2R), el:la.elevation / D2R, range:la.rangeSat, alt:gd.height,
-    lat:satellite.degreesLat(gd.latitude), lon:satellite.degreesLong(gd.longitude), eci:pv.position};
-}
-function issLit(r, date) { // 宇宙ステーションに日が当たっているか（地球の影の外か）
-  const s = sunVec(date), dot = r.x * s[0] + r.y * s[1] + r.z * s[2];
-  if (dot > 0) return true;
-  return Math.hypot(r.x - dot * s[0], r.y - dot * s[1], r.z - dot * s[2]) > RE;
-}
-const issVisible = (L, d) => L.el > 10 && sunAt(pos[1], pos[0], d).el < -6 && issLit(L.eci, d);
-async function computePasses() {
-  if (!issRec || !pos || issBusy) return;
-  issBusy = true;
-  const start = Date.now(), step = 20000, end = start + 72 * 3600000, passes = [];
-  let cur = null, k = 0;
-  for (let t = start; t < end; t += step, k++) {
-    const d = new Date(t), L = issLook(d);
-    if (L && issVisible(L, d)) {
-      if (!cur) cur = {s:t, saz:L.az, max:L.el, e:t, eaz:L.az};
-      else { cur.e = t; cur.eaz = L.az; if (L.el > cur.max) cur.max = L.el; }
-    } else if (cur) { passes.push(cur); cur = null; if (passes.length >= 4) break; }
-    if (k % 400 === 0) await new Promise(r => setTimeout(r));
-  }
-  if (cur) passes.push(cur);
-  issPasses = passes.filter(p => p.e - p.s >= 40000);
-  issPassAt = Date.now(); issPassPos = pos.slice(); issBusy = false;
-  renderIss();
-}
-const hm = t => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
-const md = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}（${WDAY[d.getDay()]}）`; };
-function renderIss() {
-  const el = $('iss');
-  if (issMsg) { el.textContent = '国際宇宙ステーション：' + issMsg; return; }
-  if (!issRec) { el.textContent = '国際宇宙ステーション：軌道データを読み込み中…'; return; }
-  const now = Date.now(), lines = [];
-  if (issNow && issNow.el > 0) {
-    const vis = issVisible(issNow, new Date(now));
-    lines.push(`<b>いま地平線の上</b>：${dirName(issNow.az)} 仰角${Math.round(issNow.el)}°・${Math.round(issNow.range)}km先${vis ? '　<b style="color:#c0392b">肉眼で見えます！</b>' : '（空が明るいか地球の影の中で、肉眼では見えません）'}`);
-  }
-  const next = issPasses.find(p => p.e > now);
-  if (next) {
-    const on = next.s <= now;
-    lines.push(`${on ? '<b style="color:#c0392b">いま通過中</b>' : '次に見えるのは'}　${md(next.s)} ${hm(next.s)}〜${hm(next.e)}　${dirName(next.saz)}から${dirName(next.eaz)}へ　最大の高さ${Math.round(next.max)}°`);
-  } else if (issPassAt) lines.push('3日以内に肉眼で見える通過はありません');
-  else lines.push('見える時刻を計算中…');
-  el.innerHTML = '<b>国際宇宙ステーション</b>　' + lines.join('<br>');
-}
-function issTick() {
-  if (!issRec || !pos) return;
-  const now = Date.now();
-  issNow = issLook(new Date(now));
-  if (issNow) {
-    if (!issMarker) {
-      const e = document.createElement('div'); e.className = 'iss'; e.textContent = 'ISS';
-      issMarker = new mapboxgl.Marker({element:e}).setLngLat([issNow.lon, issNow.lat]).addTo(map);
-    } else issMarker.setLngLat([issNow.lon, issNow.lat]);
-  }
-  if (!issPassAt || now - issPassAt > 1800000 || (issPassPos && gcKm(issPassPos, pos) > 30)
-      || (issPasses[0] && issPasses[0].e < now)) computePasses();
-  const next = issPasses.find(p => p.e > now);
-  if (next && next.s - now <= 300000 && next.s - now > -60000 && !issNotified.has(next.s)) {
-    issNotified.add(next.s);
-    alertMsg(`まもなく宇宙ステーションが見えます：${hm(next.s)}から ${dirName(next.saz)}の空`, null, true);
-  }
-  renderIss();
-}
-async function startIss() {
-  if (typeof satellite === 'undefined') { issMsg = '計算の部品を読み込めませんでした'; renderIss(); return; }
-  renderIss();
-  const tle = await loadTle();
-  if (!tle) { issMsg = '軌道データを取得できませんでした（あとで開き直してください）'; renderIss(); return; }
-  issRec = satellite.twoline2satrec(tle.l1, tle.l2);
-  issTick();
-  setInterval(() => { if (!document.hidden) issTick(); }, 2000);
+function showRoute() {
+  const c = cands[candIdx];
+  route = {coords: c.coords, cum: cumOf(c.coords), pts: c.pts, baseTotal: c.baseTotal, loop: c.loop, ur: c.ur, off: 0, prog: 0};
+  setData('route', line(c.coords));
+  $('walkBtn').disabled = false;
+  const b = new mapboxgl.LngLatBounds(); c.coords.forEach(p => b.extend(p));
+  if (walk) setFollow(true);
+  else { setFollow(false); map.fitBounds(b, {padding: 50, maxZoom: 17}); }
+  updateRemain();
 }
 
-// ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
-const savedPos = lsGet('sora_lastpos', null);
-if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
-if ('geolocation' in navigator) {
-  navigator.geolocation.watchPosition(
-    g => {
-      const p = [g.coords.longitude, g.coords.latitude], wasSaved = usingSaved || usingDef;
-      setPos(p, false, false);
-      lsSet('sora_lastpos', [+p[0].toFixed(3), +p[1].toFixed(3)]);
-      if (wasSaved) setTimeout(tick, busy ? 1500 : 0);
-    },
-    e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
-    {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
-} else if (!pos) setPos(DEF, true);
-startIss();
+// ---------- 比較用：Mapboxの徒歩ルート ----------
+async function fetchCmp(pts) {
+  try {
+    const c = pts.map(p => p[0].toFixed(6) + ',' + p[1].toFixed(6)).join(';');
+    const res = await fetch(`https://api.mapbox.com/directions/v5/mapbox/walking/${c}?geometries=geojson&overview=full&access_token=${TOKEN}`);
+    const j = await res.json();
+    if (!res.ok || j.code !== 'Ok' || !j.routes.length) throw new Error(`HTTP ${res.status} ${j.code || ''} ${j.message || ''}`);
+    const r = j.routes[0];
+    cmpCoords = r.geometry.coordinates; setData('cmp', line(cmpCoords));
+    cmpText = `比較（Mapbox徒歩・最短・点線）：${fmtDist(r.distance)}・約${mins(r.distance)}分`;
+  } catch (e) { showErr('比較ルートの取得に失敗：' + e.message); cmpText = ''; }
+  showSummary();
+}
+
+// ---------- 残り距離の表示 ----------
+function updateRemain() {
+  if (!route) return;
+  const c = route.coords, total = route.cum[route.cum.length - 1];
+  let remain = total;
+  if (pos) {
+    let best = {d: 1e12, i: 0, t: 0};
+    for (let i = Math.max(0, route.prog - 2); i < c.length - 1; i++) {
+      const s = segDist(pos, c[i], c[i + 1]);
+      if (s.d < best.d) best = {d: s.d, i, t: s.t};
+    }
+    route.off = best.d;
+    if (best.d <= 60) route.prog = Math.max(route.prog, best.i);
+    const a = route.cum[best.i] + best.t * (route.cum[best.i + 1] - route.cum[best.i]);
+    remain = Math.max(0, total - a);
+  }
+  lastRemain = remain;
+  $('rem').textContent = remain < 20 ? (route.loop ? '出発点に戻りました' : '目的地付近です') : `残り ${fmtDist(remain)}　約${mins(remain)}分`;
+  showSummary();
+  renderHud();
+}
+function showSummary() {
+  if (!route) return;
+  const total = route.cum[route.cum.length - 1];
+  let h = (route.loop ? '周回コース ' : '') + `全長 ${fmtDist(total)}・約${mins(total)}分（分速80m）`;
+  if (route.baseTotal && total - route.baseTotal > 50) h += `<br>最短より＋${fmtDist(total - route.baseTotal)}`;
+  if (via && !route.loop) h += '　経由地あり';
+  if (cands.length > 1) h += `　案${candIdx + 1}／${cands.length}`;
+  if (tracks.some(t => t.k !== 'veh')) h += `<br>このルートの未踏破率 ${Math.round((route.ur ?? 1) * 100)}%`;
+  if (cmpText && !route.loop) h += '<br>' + cmpText;
+  if (route.off > 60) h += '<br><span style="color:#c0392b">ルートから離れています。必要なら「再計算」を押してください</span>';
+  $('sub').innerHTML = h;
+}
 </script>
 </body>
 </html>

@@ -9,13 +9,21 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:sans-serif;font-size:15px}
-#map{position:absolute;top:0;left:0;right:0;height:42%}
-#panel{position:absolute;top:42%;bottom:0;left:0;right:0;overflow:auto;padding:8px 10px;background:#fafafa;border-top:1px solid #ccc}
+#map,#scopeBox{position:absolute;top:0;left:0;right:0;height:40%}
+#scopeBox{display:none;background:#0d1b2a;z-index:2}
+#scope{display:block;width:100%;height:100%}
+#panel{position:absolute;top:40%;bottom:0;left:0;right:0;overflow:auto;padding:8px 10px;background:#fafafa;border-top:1px solid #ccc}
+body.skyOn #scopeBox{display:block;height:60%}
+body.skyOn #panel{top:60%}
 @media (min-width:900px){
-  #map{height:auto;bottom:0;right:420px}
+  #map,#scopeBox{height:auto;bottom:0;right:420px}
   #panel{top:0;left:auto;width:420px;border-top:none;border-left:1px solid #ccc}
+  body.skyOn #scopeBox{height:auto}
+  body.skyOn #panel{top:0}
 }
-select{font-size:15px;padding:5px 8px;margin:2px 4px 2px 0}
+select,button{font-size:15px;padding:5px 8px;margin:2px 4px 2px 0}
+button.on{background:#c0392b;color:#fff;border:1px solid #c0392b;border-radius:4px}
+label{white-space:nowrap;margin-right:6px}
 .card{border:1px solid #ccc;border-left:6px solid #1f6fd1;border-radius:6px;padding:6px 8px;margin:6px 0;background:#fff;line-height:1.5;cursor:pointer}
 .card.mil{border-left-color:#c0392b;background:#fff6f5}
 .card.sel{outline:2px solid #333}
@@ -23,25 +31,50 @@ select{font-size:15px;padding:5px 8px;margin:2px 4px 2px 0}
 .route{font-size:19px;font-weight:bold}
 .info{font-size:14px}
 .small{color:#777;font-size:12px}
+.near{color:#d35400;font-weight:bold}
 .plane{cursor:pointer;line-height:0}
+#detail{display:none;border:2px solid #333;border-radius:6px;background:#fff;padding:6px 8px;margin:6px 0;line-height:1.5}
+#detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
+#toast{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:92%;text-align:center;cursor:pointer}
+#zukan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
+#zukan table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+#zukan td,#zukan th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="scopeBox"><canvas id="scope"></canvas></div>
+<div id="toast"></div>
+<div id="zukan">
+  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span>
+  <table><thead><tr><th>機種</th><th>回数</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
+  <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。</div>
+</div>
 <div id="panel">
   <div>
     範囲：<select id="rad"><option>10</option><option>20</option><option selected>30</option><option>50</option></select>km
-    <label><input type="checkbox" id="ground">地上の機体も表示</label>
+    並び：<select id="sort"><option value="dist">近い順</option><option value="come">これから来る順</option></select>
+    <label><input type="checkbox" id="ground">地上も</label>
   </div>
+  <div>
+    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button>
+    <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
+    <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
+  </div>
+  <div id="skyCtl" style="display:none">
+    補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
+    <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span>
+  </div>
+  <div id="detail"></div>
   <div id="head" class="small">現在地を取得中…</div>
   <div id="list"></div>
   <div id="err" class="small" style="color:#c00"></div>
   <div class="small"><span id="upd"></span></div>
-  <div class="small">機体データ：adsb.lol ほか（中継経由）　行き先：adsbdb</div>
+  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net</div>
 </div>
 <script>
-// ▼▼▼ 手順1で控えた中継のアドレス（〇〇〇の部分を書き換える。最後に / は付けない） ▼▼▼
-const RELAY = 'https://miage-relay.horihako.workers.dev';
+// ▼▼▼ 中継のアドレス（前回と同じものに書き換える。最後に / は付けない） ▼▼▼
+const RELAY = 'https://miage-relay.〇〇〇.workers.dev';
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 const TOKEN = 'pk.eyJ1IjoiaG9yaWhha28iLCJhIjoiY211djd0ejljMDA5ZjMycHYxaTY3M3BsdSJ9.a1yefJYynC4k_YvllM5DVw';
@@ -52,7 +85,20 @@ const map = new mapboxgl.Map({container:'map', style:'mapbox://styles/mapbox/lig
 map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
 let pos = null, usingDef = false, sel = null, planes = [], timer = null, busy = false, routeBusy = false, meMarker = null;
-const markers = new Map(), routes = new Map();
+let sky = false, head = null, elevNow = 0, sx = 0, sy = 0, gotOri = false, aimHex = null, toastHex = null, toastTimer = null;
+const markers = new Map(), photos = new Map(), notified = new Set();
+
+// ---------- 保存（スマホ内） ----------
+function lsGet(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+let routes = lsGet('sora_routes_v1', {}); if (!routes || typeof routes !== 'object') routes = {};
+let zukan = lsGet('sora_zukan_v1', null); if (!zukan || !zukan.types || !zukan.seen) zukan = {types:{}, seen:{}};
+let offset = Number(lsGet('sora_offset', 0)) || 0;
+['rad', 'sort', 'ground', 'ntfMil', 'ntfOver'].forEach(id => {
+  const el = $(id), v = lsGet('sora_' + id, null);
+  if (v != null) { if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
+  el.addEventListener('change', () => lsSet('sora_' + id, el.type === 'checkbox' ? el.checked : el.value));
+});
 
 // ---------- 辞書 ----------
 const JA_AP = {HND:'羽田',NRT:'成田',KIX:'関西',ITM:'伊丹',UKB:'神戸',NGO:'中部',FSZ:'静岡',FUK:'福岡',CTS:'新千歳',OKA:'那覇',
@@ -91,19 +137,10 @@ const TYPE = {A20N:'エアバスA320neo',A21N:'エアバスA321neo',A319:'エア
 // ---------- 共通 ----------
 function showErr(m) { $('err').textContent = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}) + ' ' + m; }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function distKm(a, b) {
-  const r = Math.PI / 180, dLat = (b[1] - a[1]) * r, dLon = (b[0] - a[0]) * r;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dLon / 2) ** 2;
-  return 12742 * Math.asin(Math.sqrt(h));
-}
-function brg(a, b) {
-  const r = Math.PI / 180, dl = (b[0] - a[0]) * r;
-  const y = Math.sin(dl) * Math.cos(b[1] * r);
-  const x = Math.cos(a[1] * r) * Math.sin(b[1] * r) - Math.sin(a[1] * r) * Math.cos(b[1] * r) * Math.cos(dl);
-  return (Math.atan2(y, x) / r + 360) % 360;
-}
+const norm360 = a => ((a % 360) + 360) % 360;
 const DIRS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
-const dirName = d => DIRS[Math.round(d / 45) % 8];
+const dirName = d => DIRS[Math.round(norm360(d) / 45) % 8];
+function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function circle(c, km) {
   const pts = [], kx = 111.32 * Math.cos(c[1] * Math.PI / 180);
   for (let i = 0; i <= 64; i++) { const a = i / 64 * 2 * Math.PI; pts.push([c[0] + km / kx * Math.sin(a), c[1] + km / 110.57 * Math.cos(a)]); }
@@ -147,22 +184,45 @@ if ('geolocation' in navigator) {
     {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
 } else setPos(DEF, true);
 
-// ---------- 取得 ----------
+// ---------- 機体データ ----------
 function start() { clearInterval(timer); tick(); timer = setInterval(tick, 10000); }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { if (pos) start(); } else clearInterval(timer);
 });
-$('rad').onchange = () => { drawRange(); tick(); };
-$('ground').onchange = () => tick();
+$('rad').addEventListener('change', () => { drawRange(); tick(); });
+$('ground').addEventListener('change', () => tick());
+$('sort').addEventListener('change', () => { sortPlanes(); render(); });
 
-function norm(a) {
-  const p = [a.lon, a.lat], ground = a.alt_baro === 'ground';
+function norm(a, now) {
+  const ground = a.alt_baro === 'ground';
   const ft = typeof a.alt_geom === 'number' ? a.alt_geom : (typeof a.alt_baro === 'number' ? a.alt_baro : 0);
-  const altM = ground ? 0 : Math.max(0, Math.round(ft * 0.3048)), dist = distKm(pos, p);
-  return {hex:a.hex, cs:(a.flight || '').trim(), reg:a.r || '', type:a.t || '', p, ground, altM, dist,
-    dir:brg(pos, p), elev:Math.atan2(altM, dist * 1000) * 180 / Math.PI,
-    track:a.track ?? a.true_heading ?? 0, mil:!!(a.dbFlags & 1),
-    rate:a.baro_rate ?? a.geom_rate ?? 0, kmh:a.gs ? Math.round(a.gs * 1.852) : null};
+  return {hex:a.hex, cs:(a.flight || '').trim(), reg:a.r || '', type:a.t || '', lat:a.lat, lon:a.lon, ground,
+    altM:ground ? 0 : Math.max(0, Math.round(ft * 0.3048)), track:a.track ?? a.true_heading ?? 0, gs:a.gs || 0,
+    mil:!!(a.dbFlags & 1), rate:a.baro_rate ?? a.geom_rate ?? 0, kmh:a.gs ? Math.round(a.gs * 1.852) : null,
+    t0:now - (a.seen_pos || 0) * 1000};
+}
+// 速度と向きから「いまの位置」と「最接近」を計算する
+function place(p, now) {
+  const dt = Math.min(60, Math.max(0, (now - p.t0) / 1000)), tr = p.track * Math.PI / 180;
+  const dkm = p.ground ? 0 : p.gs * 1.852 / 3600 * dt;
+  const lat = p.lat + dkm * Math.cos(tr) / 110.57, lon = p.lon + dkm * Math.sin(tr) / (111.32 * Math.cos(p.lat * Math.PI / 180));
+  p.p = [lon, lat];
+  const kx = 111.32 * Math.cos(pos[1] * Math.PI / 180), e = (lon - pos[0]) * kx, n = (lat - pos[1]) * 110.57;
+  p.dist = Math.hypot(e, n);
+  p.dir = norm360(Math.atan2(e, n) * 180 / Math.PI);
+  p.elev = Math.atan2(p.altM, p.dist * 1000) * 180 / Math.PI;
+  const v = p.gs * 1.852 / 60; // km/分
+  p.cpaT = null; p.cpaKm = null;
+  if (!p.ground && v > 1) {
+    const ve = v * Math.sin(tr), vn = v * Math.cos(tr), t = -(e * ve + n * vn) / (v * v), tt = Math.max(0, t);
+    p.cpaT = t; p.cpaKm = Math.hypot(e + ve * tt, n + vn * tt);
+  }
+}
+function sortPlanes() {
+  if ($('sort').value === 'come') {
+    const key = p => (p.cpaT != null && p.cpaT > 0 && p.cpaKm <= 10) ? p.cpaT : 1e6 + p.dist;
+    planes.sort((a, b) => key(a) - key(b));
+  } else planes.sort((a, b) => a.dist - b.dist);
 }
 async function tick() {
   if (!pos || busy) return;
@@ -172,58 +232,90 @@ async function tick() {
   try {
     const r = await fetch(`${RELAY}/ac/${pos[1].toFixed(4)}/${pos[0].toFixed(4)}/${nm}`);
     if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 80));
-    const j = await r.json();
-    planes = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(norm)
-      .filter(p => p.dist <= km && ($('ground').checked || !p.ground))
-      .sort((a, b) => a.dist - b.dist);
-    // 将来の記録用：ここで planes を保存すれば履歴が作れる
+    const j = await r.json(), now = Date.now();
+    const list = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(a => norm(a, now));
+    list.forEach(p => place(p, now));
+    planes = list.filter(p => p.dist <= km && ($('ground').checked || !p.ground));
+    sortPlanes();
+    record(planes);
+    notify(planes);
     render();
     $('upd').textContent = '更新 ' + new Date().toLocaleTimeString('ja-JP');
     $('err').textContent = '';
-    fetchRoutes(planes).then(render);
+    fetchRoutes(planes).then(changed => { if (changed) render(); });
   } catch (e) { showErr('機体データの取得に失敗：' + e.message); }
   finally { busy = false; }
 }
-const apConv = a => ({iata:a.iata_code, icao:a.icao_code, name:a.name, location:a.municipality, lat:a.latitude, lon:a.longitude});
+
+// ---------- 行き先（スマホに覚えておく） ----------
+const ROUTE_DAYS = 30, NONE_HOURS = 12;
+function routeEntry(cs) {
+  const r = cs && routes[cs];
+  if (!r) return null;
+  const age = Date.now() - r.t;
+  return (r.none ? age > NONE_HOURS * 3600000 : age > ROUTE_DAYS * 86400000) ? null : r;
+}
+let saveTimer = null;
+function saveRoutes() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const ks = Object.keys(routes);
+    if (ks.length > 3000) ks.sort((a, b) => routes[a].t - routes[b].t).slice(0, ks.length - 3000).forEach(k => delete routes[k]);
+    lsSet('sora_routes_v1', routes);
+  }, 1000);
+}
+const apConv = a => ({iata:a.iata_code || '', name:a.name || '', loc:a.municipality || '',
+  lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3)});
 async function fetchRoutes(list) {
-  if (routeBusy) return;
-  const need = list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routes.has(p.cs)).slice(0, 5);
-  if (!need.length) return;
+  if (routeBusy) return false;
+  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)).map(p => p.cs))].slice(0, 10);
+  if (!need.length) return false;
   routeBusy = true;
   try {
-    for (const p of need) {
-      try {
-        const r = await fetch(`${RELAY}/route/${encodeURIComponent(p.cs)}`);
-        if (r.status === 404) { routes.set(p.cs, {none:true}); continue; }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const j = await r.json(), fr = j.response && j.response.flightroute;
-        if (!fr || !fr.origin || !fr.destination) { routes.set(p.cs, {none:true}); continue; }
-        routes.set(p.cs, {_airports:[apConv(fr.origin), apConv(fr.destination)]});
-      } catch (e) { showErr('行き先の取得に失敗：' + e.message); break; }
-    }
-  } finally { routeBusy = false; }
+    const r = await fetch(`${RELAY}/routes/${need.join(',')}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(), now = Date.now();
+    need.forEach(cs => {
+      const fr = j[cs];
+      if (fr && fr.origin && fr.destination) routes[cs] = {t:now, a:[apConv(fr.origin), apConv(fr.destination)]};
+      else if (!fr) routes[cs] = {t:now, none:1};
+    });
+    saveRoutes();
+    return true;
+  } catch (e) { showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
+  finally { routeBusy = false; }
 }
-function apName(ap) { return JA_AP[ap.iata] || ap.location || ap.name || ap.iata || ap.icao || '?'; }
-function apPt(ap) { const lo = Number(ap.lon ?? ap.lng), la = Number(ap.lat); return isFinite(lo) && isFinite(la) ? [lo, la] : null; }
+function apName(ap) { return JA_AP[ap.iata] || ap.loc || ap.name || ap.iata || '?'; }
 function routeInfo(p) {
-  const r = routes.get(p.cs);
-  if (!r || r.none || !Array.isArray(r._airports) || r._airports.length < 2) return null;
-  const aps = r._airports;
-  return {text:aps.map(apName).join(' → '), orig:apPt(aps[0]), dest:apPt(aps[aps.length - 1])};
+  const r = routeEntry(p.cs);
+  if (!r || r.none || !r.a) return null;
+  return {text:r.a.map(apName).join(' → '), destName:apName(r.a[1]), orig:[r.a[0].lon, r.a[0].lat], dest:[r.a[1].lon, r.a[1].lat]};
+}
+function routeText(p) {
+  const ri = routeInfo(p);
+  if (ri) return ri.text;
+  if (p.mil) return '行き先不明（軍用機）';
+  return /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs) ? '行き先を調べ中…' : '行き先不明';
+}
+const typeName = p => TYPE[p.type] || p.type || '機種不明';
+const infoText = p => [typeName(p), AIRLINE[p.cs.slice(0, 3)] || '', p.cs || p.reg].filter(Boolean).join('・');
+function nearText(p) {
+  if (p.cpaT == null) return '';
+  if (p.cpaT <= 0) return '遠ざかり中';
+  if (p.cpaT > 20) return '';
+  return (p.cpaT < 0.5 ? 'まもなく' : `あと${Math.round(p.cpaT)}分で`) + `最接近（${p.cpaKm.toFixed(1)}km）`;
 }
 
-// ---------- 表示 ----------
+// ---------- 一覧と地図の表示 ----------
 function cardHtml(p) {
-  const ri = routeInfo(p);
-  const rt = ri ? ri.text : (p.cs && !routes.has(p.cs) && !p.mil ? '行き先を調べ中…' : '行き先不明');
   const rate = p.rate > 500 ? '上昇中' : p.rate < -500 ? '下降中' : '';
-  const info = [TYPE[p.type] || p.type || '機種不明', AIRLINE[p.cs.slice(0, 3)] || '', p.cs || p.reg].filter(Boolean).join('・');
   const alt = p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m ${rate}`;
+  const nt = nearText(p), hot = p.cpaT != null && p.cpaT > 0 && p.cpaKm <= 5;
   return `<div class="card${p.mil ? ' mil' : ''}${p.hex === sel ? ' sel' : ''}" id="c_${esc(p.hex)}" data-hex="${esc(p.hex)}">
     <div class="where">${p.mil ? '<b style="color:#c0392b">軍用機</b>　' : ''}${dirName(p.dir)} ${p.dist.toFixed(1)}km・見上げ角 ${Math.round(p.elev)}°</div>
-    <div class="route">${esc(rt)}</div>
-    <div class="info">${esc(info)}</div>
-    <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}</div></div>`;
+    <div class="route">${esc(routeText(p))}</div>
+    <div class="info">${esc(infoText(p))}</div>
+    <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div></div>`;
 }
 function render() {
   $('head').textContent = `${planes.length}機（半径${$('rad').value}km）` + (usingDef ? '　※現在地が取れないため南大沢付近を中心にしています' : '');
@@ -244,11 +336,19 @@ function render() {
   });
   markers.forEach((m, hex) => { if (!keep.has(hex)) { m.remove(); markers.delete(hex); } });
   if (sel && !keep.has(sel)) sel = null;
-  drawSel();
+  drawSel(); renderDetail(false);
 }
+// 更新と更新のあいだも機体を動かす
+setInterval(() => {
+  if (!pos || !planes.length || document.hidden) return;
+  const now = Date.now();
+  planes.forEach(p => { place(p, now); const m = markers.get(p.hex); if (m) m.setLngLat(p.p); });
+  drawSel();
+}, 500);
 function select(hex, scroll) {
   sel = sel === hex ? null : hex;
-  render();
+  if (sel) loadPhoto(sel);
+  render(); renderDetail(true);
   const p = planes.find(x => x.hex === sel);
   if (!p) return;
   map.fitBounds(new mapboxgl.LngLatBounds(pos, pos).extend(p.p), {padding:60, maxZoom:12});
@@ -257,11 +357,207 @@ function select(hex, scroll) {
 function drawSel() {
   const p = planes.find(x => x.hex === sel), ri = p && routeInfo(p);
   if (!ri) { setData('route', []); return; }
-  const f = [];
-  if (ri.orig) f.push(line(ri.orig, p.p, 'from'));
-  if (ri.dest) f.push(line(p.p, ri.dest, 'to'));
-  setData('route', f);
+  setData('route', [line(ri.orig, p.p, 'from'), line(p.p, ri.dest, 'to')]);
 }
+
+// ---------- 写真（Planespotters.net） ----------
+async function loadPhoto(hex) {
+  if (photos.has(hex)) return;
+  photos.set(hex, 'loading');
+  let ph = null;
+  try {
+    const r = await fetch('https://api.planespotters.net/pub/photos/hex/' + encodeURIComponent(hex));
+    if (r.ok) {
+      const x = ((await r.json()).photos || [])[0], src = x && (x.thumbnail_large || x.thumbnail);
+      if (src && /^https:\/\//.test(src.src) && /^https:\/\//.test(x.link)) ph = {src:src.src, link:x.link, by:x.photographer || ''};
+    }
+  } catch (e) {}
+  photos.set(hex, ph);
+  if (sel === hex) renderDetail(true);
+}
+function renderDetail(full) {
+  const d = $('detail'), p = planes.find(x => x.hex === sel);
+  if (!p) { d.style.display = 'none'; d.dataset.hex = ''; return; }
+  d.style.display = 'block';
+  if (full || d.dataset.hex !== sel) {
+    d.dataset.hex = sel;
+    const ph = photos.get(sel);
+    const photoHtml = (ph === 'loading' || ph === undefined) ? '<div class="small">写真を探しています…</div>'
+      : ph ? `<a href="${esc(ph.link)}" target="_blank" rel="noopener"><img src="${esc(ph.src)}" alt="機体の写真"></a><div class="small">Photo © ${esc(ph.by)}（Planespotters.net）</div>`
+      : '<div class="small">この機体の写真は見つかりませんでした</div>';
+    d.innerHTML = `<div class="route" id="dRoute"></div><div class="info" id="dInfo"></div><div class="small" id="dSub"></div>${photoHtml}`;
+  }
+  $('dRoute').textContent = routeText(p);
+  $('dInfo').textContent = infoText(p);
+  $('dSub').textContent = [p.reg && '登録記号 ' + p.reg, p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m`, p.kmh && '時速' + p.kmh + 'km', nearText(p)].filter(Boolean).join('・');
+}
+
+// ---------- 知らせ ----------
+function alertMsg(text, hex, strong) {
+  const el = $('toast');
+  el.textContent = text; el.style.display = 'block'; toastHex = hex;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
+  try { if (navigator.vibrate) navigator.vibrate(strong ? [200, 100, 200] : [60]); } catch (e) {}
+}
+$('toast').onclick = () => { $('toast').style.display = 'none'; if (toastHex && planes.some(p => p.hex === toastHex) && sel !== toastHex) select(toastHex, true); };
+function notify(list) {
+  list.forEach(p => {
+    if (p.ground) return;
+    if ($('ntfMil').checked && p.mil && !notified.has('m' + p.hex)) {
+      notified.add('m' + p.hex);
+      alertMsg(`軍用機が範囲に入りました：${typeName(p)}（${dirName(p.dir)} ${p.dist.toFixed(0)}km）`, p.hex, true);
+    }
+    const over = (p.cpaT != null && p.cpaT > 0 && p.cpaT <= 1 && p.cpaKm <= 3) || p.dist <= 2;
+    if ($('ntfOver').checked && over && !notified.has('o' + p.hex)) {
+      notified.add('o' + p.hex);
+      alertMsg(`まもなく真上付近を通過：${routeText(p)}（${typeName(p)}）`, p.hex, true);
+    }
+  });
+}
+
+// ---------- 機種図鑑 ----------
+function record(list) {
+  const d = today(), wasEmpty = Object.keys(zukan.types).length === 0;
+  let changed = false;
+  list.forEach(p => {
+    if (p.ground) return;
+    const k = p.hex + '|' + d;
+    if (zukan.seen[k]) return;
+    zukan.seen[k] = d; changed = true;
+    const code = p.type || '?';
+    let e = zukan.types[code];
+    if (!e) {
+      e = zukan.types[code] = {n:0, first:d, last:d, mil:0};
+      if (p.type && !wasEmpty) {
+        const cnt = Object.keys(zukan.types).filter(x => x !== '?').length;
+        alertMsg(`新しい機種を発見：${typeName(p)}（図鑑 ${cnt}種目）`, p.hex, false);
+      }
+    }
+    e.n++; e.last = d; if (p.mil) e.mil = 1;
+  });
+  if (!changed) return;
+  for (const k in zukan.seen) if (zukan.seen[k] !== d) delete zukan.seen[k];
+  lsSet('sora_zukan_v1', zukan);
+  if ($('zukan').style.display === 'block') renderZukan();
+}
+function renderZukan() {
+  const ks = Object.keys(zukan.types).sort((a, b) => zukan.types[b].n - zukan.types[a].n);
+  const total = ks.reduce((s, k) => s + zukan.types[k].n, 0);
+  $('zukanSum').textContent = `${ks.filter(k => k !== '?').length}機種・のべ${total}機`;
+  $('zukanBody').innerHTML = ks.length ? ks.map(k => {
+    const e = zukan.types[k], nm = k === '?' ? '機種不明' : (TYPE[k] ? `${TYPE[k]}（${k}）` : k);
+    return `<tr><td>${e.mil ? '<b style="color:#c0392b">軍</b> ' : ''}${esc(nm)}</td><td>${e.n}</td><td>${esc(e.first)}</td><td>${esc(e.last)}</td></tr>`;
+  }).join('') : '<tr><td colspan="4">まだ記録がありません</td></tr>';
+}
+$('zukanBtn').onclick = () => { renderZukan(); $('zukan').style.display = 'block'; };
+$('zukanClose').onclick = () => { $('zukan').style.display = 'none'; };
+
+// ---------- 空に向ける ----------
+// 背面カメラが向いている方角と仰角
+function orient(a, b, g) {
+  const r = Math.PI / 180, cA = Math.cos(a * r), sA = Math.sin(a * r), cB = Math.cos(b * r), sB = Math.sin(b * r),
+    cG = Math.cos(g * r), sG = Math.sin(g * r);
+  const vx = -(cG * sA * sB + cA * sG), vy = -(sA * sG - cA * cG * sB), vz = -cB * cG;
+  return {az:norm360(Math.atan2(vx, vy) / r), el:Math.asin(Math.max(-1, Math.min(1, vz))) / r};
+}
+function onOri(e) {
+  if (e.alpha == null && e.webkitCompassHeading == null) return;
+  let o;
+  if (e.webkitCompassHeading != null) { o = orient(0, e.beta || 0, e.gamma || 0); o.az = e.webkitCompassHeading; }
+  else if (e.type === 'deviceorientationabsolute' || e.absolute) o = orient(e.alpha, e.beta || 0, e.gamma || 0);
+  else return;
+  const r = Math.PI / 180;
+  if (!gotOri) { sx = Math.sin(o.az * r); sy = Math.cos(o.az * r); elevNow = o.el; }
+  gotOri = true;
+  sx = sx * 0.8 + Math.sin(o.az * r) * 0.2; sy = sy * 0.8 + Math.cos(o.az * r) * 0.2;
+  elevNow = elevNow * 0.8 + o.el * 0.2;
+  head = norm360(Math.atan2(sx, sy) / r + offset);
+}
+if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOri);
+else window.addEventListener('deviceorientation', onOri);
+const FOV = 35; // 照準の中心から画面の端までの角度
+function drawScope() {
+  const c = $('scope'), box = $('scopeBox'), dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = box.clientWidth, H = box.clientHeight;
+  if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#fff'; g.font = '14px sans-serif'; g.textAlign = 'left';
+  if (head == null) {
+    aimHex = null;
+    g.fillText('方位センサーの値を待っています…', 10, 24);
+    g.fillText('動かない場合は、スマホを8の字に数回振ってください', 10, 46);
+    return;
+  }
+  const cx = W / 2, cy = H / 2, sc = Math.min(W, H) / 2 / FOV;
+  const ce = Math.cos(Math.min(80, Math.abs(elevNow)) * Math.PI / 180);
+  const dAz = az => ((az - head + 540) % 360) - 180;
+  const toXY = (az, el) => [cx + dAz(az) * ce * sc, cy - (el - elevNow) * sc];
+  // 地面と地平線、方角
+  const hy = cy + elevNow * sc;
+  if (hy < H) {
+    g.fillStyle = '#1c2b1c'; g.fillRect(0, Math.max(0, hy), W, H - Math.max(0, hy));
+    g.strokeStyle = '#6b8e6b'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, hy); g.lineTo(W, hy); g.stroke();
+  }
+  g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#9fc59f';
+  for (let k = 0; k < 8; k++) { const [x] = toXY(k * 45, 0); if (x > -20 && x < W + 20) g.fillText(DIRS[k], x, Math.min(H - 40, Math.max(16, hy + 16))); }
+  // 照準
+  g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, 10 * sc, 0, 7); g.stroke();
+  g.beginPath(); g.moveTo(cx - 12, cy); g.lineTo(cx + 12, cy); g.moveTo(cx, cy - 12); g.lineTo(cx, cy + 12); g.stroke();
+  // 機体
+  let best = null, bd = 12;
+  g.textAlign = 'left';
+  planes.forEach(p => {
+    if (p.ground) return;
+    const da = dAz(p.dir), ang = Math.hypot(da * ce, p.elev - elevNow);
+    if (ang < bd) { bd = ang; best = p; }
+    const [x, y] = toXY(p.dir, p.elev);
+    if (x < -60 || x > W + 60 || y < -20 || y > H + 20) return;
+    g.fillStyle = p.mil ? '#ff6b5b' : '#5bb8ff';
+    g.beginPath(); g.arc(x, y, p.hex === sel ? 7 : 5, 0, 7); g.fill();
+    const ri = routeInfo(p);
+    g.fillStyle = '#fff'; g.font = '12px sans-serif';
+    g.fillText((p.cs || p.reg || '?') + (ri ? ' ' + ri.destName + '行き' : p.mil ? ' 軍用機' : ''), x + 9, y + 4);
+  });
+  aimHex = best ? best.hex : null;
+  if (best) {
+    const [x, y] = toXY(best.dir, best.elev);
+    g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 14, 0, 7); g.stroke();
+  }
+  // 文字
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, 24); g.fillRect(0, H - 46, W, 46);
+  g.fillStyle = '#fff'; g.font = '13px sans-serif';
+  g.fillText(`向き：${dirName(head)} ${Math.round(head)}°　仰角 ${Math.round(elevNow)}°`, 8, 17);
+  if (best) {
+    g.font = 'bold 15px sans-serif'; g.fillStyle = best.mil ? '#ff8a7a' : '#ffd54f';
+    g.fillText('照準：' + routeText(best), 8, H - 26);
+    g.font = '12px sans-serif'; g.fillStyle = '#fff';
+    g.fillText(`${infoText(best)}・高度${best.altM.toLocaleString()}m・${best.dist.toFixed(1)}km（タップで詳細）`, 8, H - 9);
+  } else {
+    g.font = '13px sans-serif'; g.fillStyle = '#ccc';
+    g.fillText('照準の近くに機体はありません', 8, H - 18);
+  }
+}
+function scopeLoop() { if (!sky) return; drawScope(); requestAnimationFrame(scopeLoop); }
+function setSky(on) {
+  sky = on;
+  document.body.classList.toggle('skyOn', on);
+  $('skyBtn').classList.toggle('on', on);
+  $('skyBtn').textContent = on ? '空に向ける：ON' : '空に向ける';
+  $('skyCtl').style.display = on ? 'block' : 'none';
+  if (on) {
+    requestAnimationFrame(scopeLoop);
+    setTimeout(() => { if (sky && !gotOri) $('skyInfo').textContent = 'この端末では方位センサーが使えないようです'; }, 1500);
+  } else map.resize();
+}
+$('skyBtn').onclick = () => setSky(!sky);
+$('scope').onclick = () => { if (aimHex && sel !== aimHex) select(aimHex, true); };
+function showOffset() { $('offVal').textContent = (offset > 0 ? '+' : '') + offset + '°'; }
+function changeOffset(d) { offset += d; showOffset(); lsSet('sora_offset', offset); }
+$('offMinus').onclick = () => changeOffset(-5);
+$('offPlus').onclick = () => changeOffset(5);
+showOffset();
 </script>
 </body>
 </html>

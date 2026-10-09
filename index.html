@@ -13,7 +13,8 @@
 body{margin:0;font-family:sans-serif;font-size:15px}
 #map,#scopeBox{position:absolute;top:0;left:0;right:0;height:40%}
 #scopeBox{display:none;background:#0d1b2a;z-index:2}
-#scope{display:block;width:100%;height:100%}
+#scope{position:absolute;top:0;left:0;display:block;width:100%;height:100%}
+#cam{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none}
 #panel{position:absolute;top:40%;bottom:0;left:0;right:0;overflow:auto;padding:8px 10px;background:#fafafa;border-top:1px solid #ccc}
 body.skyOn #scopeBox{display:block;height:60%}
 body.skyOn #panel{top:60%}
@@ -59,9 +60,11 @@ label{white-space:nowrap;margin-right:6px}
 #detail{display:none;border:2px solid #333;border-radius:6px;background:#fff;padding:6px 8px;margin:6px 0;line-height:1.5}
 #detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
 #toast{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:92%;text-align:center;cursor:pointer}
-#zukan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
-#zukan table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
-#zukan td,#zukan th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
+#zukan,#cities{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
+#citiesMap{height:45vh;margin-top:8px;border-radius:6px}
+.reset{float:right;background:#fff;color:#c0392b;border:1px solid #c0392b;border-radius:4px;font-size:13px}
+#zukan table,#cities table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+#zukan td,#zukan th,#cities td,#cities th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
 </style>
 </head>
 <body>
@@ -72,12 +75,19 @@ label{white-space:nowrap;margin-right:6px}
   <div id="rideBtns"><button data-v="left">左窓</button><button data-v="front">前方</button><button data-v="right">右窓</button><button id="rideExit">降りる</button></div>
   <div id="rideMarks"></div>
 </div>
-<div id="scopeBox"><canvas id="scope"></canvas></div>
+<div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas></div>
 <div id="toast"></div>
 <div id="zukan">
-  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span>
+  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button>
   <table><thead><tr><th>機種</th><th>回数</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
   <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。</div>
+</div>
+<div id="cities">
+  <button id="citiesClose">閉じる</button> <b>この空から行った都市</b><button id="citiesReset" class="reset">記録を消す</button>
+  <div id="citiesSum" style="margin-top:6px;font-weight:bold"></div>
+  <div id="citiesMap"></div>
+  <table><thead><tr><th>都市</th><th>回数</th><th>初めて</th><th>距離</th></tr></thead><tbody id="citiesBody"></tbody></table>
+  <div class="small" style="margin-top:8px">近く（10km以内）を通った旅客機の行き先を、同じ便は1日1回だけ数えます。</div>
 </div>
 <div id="panel">
   <div>
@@ -86,12 +96,14 @@ label{white-space:nowrap;margin-right:6px}
     <label><input type="checkbox" id="ground">地上も</label>
   </div>
   <div>
-    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button>
+    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button><button id="citiesBtn">都市</button>
     <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
     <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
   </div>
   <div id="skyCtl" style="display:none">
+    <button id="camBtn">カメラ</button>
     補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
+    <span id="fovCtl" style="display:none">画角 <button id="fovMinus">狭く</button><button id="fovPlus">広く</button></span><br>
     <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span>
   </div>
   <div id="iss"></div>

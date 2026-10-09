@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:sans-serif;font-size:15px}
@@ -32,6 +33,10 @@ label{white-space:nowrap;margin-right:6px}
 .info{font-size:14px}
 .small{color:#777;font-size:12px}
 .near{color:#d35400;font-weight:bold}
+.card.sun{border-left-color:#e6a700;background:#fffbea}
+.sunt{color:#a87400;font-weight:bold}
+#iss{margin:4px 0;padding:5px 8px;border-radius:6px;background:#eef3fb;color:#334;font-size:13px;line-height:1.5}
+.iss{background:#fff;color:#0d1b2a;border:2px solid #0d1b2a;border-radius:10px;font:bold 11px sans-serif;padding:1px 5px;white-space:nowrap}
 .plane{cursor:pointer;line-height:0}
 #detail{display:none;border:2px solid #333;border-radius:6px;background:#fff;padding:6px 8px;margin:6px 0;line-height:1.5}
 #detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
@@ -52,7 +57,7 @@ label{white-space:nowrap;margin-right:6px}
 </div>
 <div id="panel">
   <div>
-    範囲：<select id="rad"><option>10</option><option>20</option><option selected>30</option><option>50</option></select>km
+    範囲：<select id="rad"><option>10</option><option>20</option><option selected>30</option><option>50</option><option>100</option><option>150</option></select>km
     並び：<select id="sort"><option value="dist">近い順</option><option value="come">これから来る順</option></select>
     <label><input type="checkbox" id="ground">地上も</label>
   </div>
@@ -65,12 +70,13 @@ label{white-space:nowrap;margin-right:6px}
     補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
     <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span>
   </div>
+  <div id="iss"></div>
   <div id="detail"></div>
   <div id="head" class="small">現在地を取得中…</div>
   <div id="list"></div>
   <div id="err" class="small" style="color:#c00"></div>
   <div class="small"><span id="upd"></span></div>
-  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net</div>
+  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか</div>
 </div>
 <script src="config.js"></script>
 <script>
@@ -152,6 +158,97 @@ const line = (a, b, k) => ({type:'Feature', properties:{k}, geometry:{type:'Line
 function setData(id, f) { const s = map.getSource(id); if (s) s.setData({type:'FeatureCollection', features:f}); }
 const PLANE = 'M12 2 L13.6 9 L22 13.5 L22 15.5 L13.6 13 L13 19 L15.5 21 L15.5 22.5 L12 21.5 L8.5 22.5 L8.5 21 L11 19 L10.4 13 L2 15.5 L2 13.5 L10.4 9 Z';
 const planeSvg = (c, big) => `<svg width="${big ? 36 : 26}" height="${big ? 36 : 26}" viewBox="0 0 24 24"><path d="${PLANE}" fill="${c}" stroke="#fff" stroke-width="1"/></svg>`;
+
+// ---------- 距離・方位・太陽 ----------
+const D2R = Math.PI / 180, RE = 6371;
+function gcKm(a, b) {
+  const dLat = (b[1] - a[1]) * D2R, dLon = (b[0] - a[0]) * D2R;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * D2R) * Math.cos(b[1] * D2R) * Math.sin(dLon / 2) ** 2;
+  return 2 * RE * Math.asin(Math.sqrt(h));
+}
+function gcBrg(a, b) {
+  const dl = (b[0] - a[0]) * D2R, y = Math.sin(dl) * Math.cos(b[1] * D2R);
+  const x = Math.cos(a[1] * D2R) * Math.sin(b[1] * D2R) - Math.sin(a[1] * D2R) * Math.cos(b[1] * D2R) * Math.cos(dl);
+  return norm360(Math.atan2(y, x) / D2R);
+}
+// 太陽の位置（簡易式。精度は0.01°程度）
+function sunCore(date) {
+  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const g = (357.528 + 0.9856003 * n) * D2R;
+  const lam = (280.460 + 0.9856474 * n + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
+  const eps = (23.439 - 0.0000004 * n) * D2R;
+  return {n, lam, eps, ra:Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)), dec:Math.asin(Math.sin(eps) * Math.sin(lam))};
+}
+function sunAt(lat, lon, date) { // 高度（度）と時角（度、正なら午後）
+  const s = sunCore(date), gmst = 280.46061837 + 360.98564736629 * s.n;
+  const H = ((gmst + lon - s.ra / D2R) % 360 + 540) % 360 - 180;
+  const el = Math.asin(Math.sin(lat * D2R) * Math.sin(s.dec) + Math.cos(lat * D2R) * Math.cos(s.dec) * Math.cos(H * D2R)) / D2R;
+  return {el, H};
+}
+function sunVec(date) { const s = sunCore(date); return [Math.cos(s.lam), Math.cos(s.eps) * Math.sin(s.lam), Math.sin(s.eps) * Math.sin(s.lam)]; }
+
+// ---------- 機窓から見える目印 ----------
+// [名前, 緯度, 経度, 高さm, 目立ち度]
+const MARKS = [
+  ['富士山',35.3606,138.7274,3776,4],['北岳',35.6744,138.2386,3193,2],['甲斐駒ヶ岳',35.7578,138.2367,2967,1.5],
+  ['仙丈ヶ岳',35.7203,138.1836,3033,1.5],['赤石岳',35.4611,138.1578,3121,1.5],['八ヶ岳',35.9708,138.3703,2899,2],
+  ['金峰山',35.8714,138.6250,2599,1.2],['甲武信ヶ岳',35.9097,138.7283,2475,1],['雲取山',35.8556,138.9439,2017,1.2],
+  ['大菩薩嶺',35.7489,138.8456,2057,1],['浅間山',36.4064,138.5228,2568,2],['谷川岳',36.8375,138.9300,1977,1.5],
+  ['赤城山',36.5603,139.1933,1828,1.5],['榛名山',36.4769,138.8508,1449,1.2],['男体山',36.7650,139.4906,2486,1.5],
+  ['日光白根山',36.7986,139.3758,2578,1.2],['那須岳',37.1250,139.9631,1915,1.2],['筑波山',36.2253,140.1067,877,2],
+  ['丹沢・蛭ヶ岳',35.4806,139.1378,1673,1.5],['大山',35.4406,139.2314,1252,1.2],['箱根山',35.2333,139.0211,1438,1.5],
+  ['天城山',34.8636,139.0006,1406,1.2],['高尾山',35.6253,139.2436,599,1],['御嶽山',35.8933,137.4806,3067,1.5],
+  ['乗鞍岳',36.1064,137.5536,3026,1.5],['槍ヶ岳',36.3419,137.6475,3180,2],['奥穂高岳',36.2894,137.6481,3190,1.5],
+  ['立山',36.5758,137.6194,3015,1.5],['白馬岳',36.7586,137.7586,2932,1.5],['木曽駒ヶ岳',35.7894,137.8044,2956,1.2],
+  ['白山',36.1550,136.7714,2702,1.5],['苗場山',36.8461,138.6900,2145,1],['燧ヶ岳',36.9553,139.2850,2356,1],
+  ['磐梯山',37.6014,140.0722,1816,1.5],['蔵王',38.1436,140.4400,1841,1.2],
+  ['東京スカイツリー',35.7101,139.8107,634,3],['東京タワー',35.6586,139.7454,333,2],['横浜みなとみらい',35.4547,139.6317,296,1.5],
+  ['羽田空港',35.5494,139.7798,10,1.5],['成田空港',35.7720,140.3929,40,1.2],['東京ディズニーリゾート',35.6329,139.8804,50,1.2],
+  ['東京湾アクアライン',35.4800,139.8700,10,1.2],['江の島',35.2992,139.4803,60,1.5],['伊豆大島',34.7244,139.3942,758,1.5],
+  ['三宅島',34.0792,139.5292,775,1],['八丈島',33.1094,139.7900,854,1],['房総半島・鋸山',35.1597,139.8361,329,1],
+  ['犬吠埼',35.7075,140.8686,20,1],['河口湖',35.5167,138.7500,830,1.2],['山中湖',35.4153,138.8706,980,1.2],
+  ['諏訪湖',36.0475,138.0844,759,1.2],['霞ヶ浦',36.0400,140.4000,0,1.2],['浜名湖',34.7344,137.6031,0,1.2],
+  ['佐渡島',38.1047,138.3631,1172,1.2],['相模湖',35.6114,139.1906,170,0.8]
+];
+let markList = null;
+function getMarks() {
+  if (markList) return markList;
+  markList = MARKS.map(m => ({name:m[0], p:[m[2], m[1]], h:m[3], w:m[4]}));
+  // 山座同定アプリで保存した百名山があれば足す（同じサイト内なので読める）
+  const y = lsGet('yama_peaks_v2', null), names = new Set(markList.map(m => m.name));
+  if (y && Array.isArray(y.list)) y.list.forEach(v => {
+    if (v[4] === 1 && !names.has(v[0])) { names.add(v[0]); markList.push({name:v[0], p:[v[1], v[2]], h:v[3] || 0, w:1.2}); }
+  });
+  return markList;
+}
+function windowView(p) {
+  if (p.ground || p.altM < 300) return null;
+  const hp = p.altM, cap = hp < 3000 ? 60 : 250, sides = {右:[], 左:[], 前:[], 後:[]};
+  getMarks().forEach(m => {
+    const d = gcKm(p.p, m.p);
+    if (d < 3 || d > cap || d > 3.57 * (Math.sqrt(hp) + Math.sqrt(Math.max(0, m.h)))) return;
+    const rb = norm360(gcBrg(p.p, m.p) - p.track);
+    let side, sub;
+    if (rb >= 20 && rb <= 160) { side = '右'; sub = rb < 70 ? '右前方' : rb > 110 ? '右後方' : '右真横'; }
+    else if (rb >= 200 && rb <= 340) { side = '左'; sub = rb > 290 ? '左前方' : rb < 250 ? '左後方' : '左真横'; }
+    else if (rb < 20 || rb > 340) { side = '前'; sub = '正面'; }
+    else { side = '後'; sub = '真後ろ'; }
+    sides[side].push({name:m.name, sub, d, score:Math.sqrt(d) / (m.w * m.w)});
+  });
+  Object.values(sides).forEach(a => a.sort((x, y) => x.score - y.score).splice(3));
+  const all = [...sides.右, ...sides.左].sort((x, y) => x.score - y.score);
+  return {sides, best:all[0] || null};
+}
+// 機体に夕日（朝日）が当たっているか
+function sunlit(p, now) {
+  if (p.ground || p.altM < 500) return null;
+  const dip = Math.acos(RE / (RE + p.altM / 1000)) / D2R + 0.57;
+  const lit = t => sunAt(p.p[1], p.p[0], t).el > -dip && sunAt(pos[1], pos[0], t).el < -0.83;
+  if (!lit(new Date(now))) return null;
+  let m = 1;
+  while (m <= 90 && lit(new Date(now + m * 60000))) m++;
+  return {kind:sunAt(pos[1], pos[0], new Date(now)).H > 0 ? '夕日' : '朝日', mins:m - 1};
+}
 
 // ---------- 地図 ----------
 map.on('load', () => {
@@ -252,6 +349,7 @@ async function tick() {
     const list = (j.ac || j.aircraft || []).filter(a => a.lat != null && a.lon != null).map(a => norm(a, base));
     list.forEach(p => place(p, now));
     planes = list.filter(p => p.dist <= km && ($('ground').checked || !p.ground));
+    planes.forEach(p => { p.sun = sunlit(p, now); p.win = windowView(p); });
     sortPlanes();
     record(planes);
     notify(planes);
@@ -331,16 +429,21 @@ function cardHtml(p) {
   const rate = p.rate > 500 ? '上昇中' : p.rate < -500 ? '下降中' : '';
   const alt = p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m ${rate}`;
   const nt = nearText(p), hot = p.cpaT != null && p.cpaT > 0 && p.cpaKm <= 5;
-  return `<div class="card${p.mil ? ' mil' : ''}${p.hex === sel ? ' sel' : ''}" id="c_${esc(p.hex)}" data-hex="${esc(p.hex)}">
+  const extra = [p.sun ? `<span class="sunt">${p.sun.kind}を浴びています（あと${p.sun.mins}分）</span>` : '',
+    p.win && p.win.best ? esc(p.win.best.sub.slice(0, 1) + '窓に' + p.win.best.name) : ''].filter(Boolean).join('　');
+  return `<div class="card${p.mil ? ' mil' : p.sun ? ' sun' : ''}${p.hex === sel ? ' sel' : ''}" id="c_${esc(p.hex)}" data-hex="${esc(p.hex)}">
     <div class="where">${p.mil ? '<b style="color:#c0392b">軍用機</b>　' : ''}${dirName(p.dir)} ${p.dist.toFixed(1)}km・見上げ角 ${Math.round(p.elev)}°</div>
     <div class="route">${esc(routeText(p))}</div>
     <div class="info">${esc(infoText(p))}</div>
-    <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div></div>`;
+    <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div>
+    ${extra ? `<div class="small">${extra}</div>` : ''}</div>`;
 }
 function render() {
   $('head').textContent = `${planes.length}機（半径${$('rad').value}km）` + (usingDef ? '　※現在地が取れないため南大沢付近を中心にしています'
     : usingSaved ? '　※前回の場所で表示中（現在地を確認しています）' : '');
-  $('list').innerHTML = planes.length ? planes.map(cardHtml).join('') : '<div class="small">いま範囲内に飛んでいる機体はありません</div>';
+  const shown = planes.slice(0, 60);
+  $('list').innerHTML = shown.length ? shown.map(cardHtml).join('') + (planes.length > 60 ? `<div class="small">ほか${planes.length - 60}機は地図に表示しています</div>` : '')
+    : '<div class="small">いま範囲内に飛んでいる機体はありません</div>';
   $('list').querySelectorAll('.card').forEach(c => c.onclick = () => select(c.dataset.hex, false));
   const keep = new Set();
   planes.forEach(p => {
@@ -353,7 +456,7 @@ function render() {
       markers.set(p.hex, m);
     }
     m.setLngLat(p.p).setRotation(p.track || 0);
-    m.getElement().innerHTML = planeSvg(p.mil ? '#c0392b' : '#1f6fd1', p.hex === sel);
+    m.getElement().innerHTML = planeSvg(p.mil ? '#c0392b' : p.sun ? '#e6a700' : '#1f6fd1', p.hex === sel);
   });
   markers.forEach((m, hex) => { if (!keep.has(hex)) { m.remove(); markers.delete(hex); } });
   if (sel && !keep.has(sel)) sel = null;
@@ -406,11 +509,16 @@ function renderDetail(full) {
     const photoHtml = (ph === 'loading' || ph === undefined) ? '<div class="small">写真を探しています…</div>'
       : ph ? `<a href="${esc(ph.link)}" target="_blank" rel="noopener"><img src="${esc(ph.src)}" alt="機体の写真"></a><div class="small">Photo © ${esc(ph.by)}（Planespotters.net）</div>`
       : '<div class="small">この機体の写真は見つかりませんでした</div>';
-    d.innerHTML = `<div class="route" id="dRoute"></div><div class="info" id="dInfo"></div><div class="small" id="dSub"></div>${photoHtml}`;
+    d.innerHTML = `<div class="route" id="dRoute"></div><div class="info" id="dInfo"></div><div class="small" id="dSub"></div><div class="small" id="dWin" style="color:#333"></div>${photoHtml}`;
   }
   $('dRoute').textContent = routeText(p);
   $('dInfo').textContent = infoText(p);
-  $('dSub').textContent = [p.reg && '登録記号 ' + p.reg, p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m`, p.kmh && '時速' + p.kmh + 'km', nearText(p)].filter(Boolean).join('・');
+  $('dSub').textContent = [p.reg && '登録記号 ' + p.reg, p.ground ? '地上' : `高度 ${p.altM.toLocaleString()}m`, p.kmh && '時速' + p.kmh + 'km', nearText(p),
+    p.sun && `${p.sun.kind}を浴びています（あと${p.sun.mins}分）`].filter(Boolean).join('・');
+  const w = p.win, fmt = a => a.map(x => `${x.name}（${x.sub} ${Math.round(x.d)}km）`).join('、');
+  $('dWin').innerHTML = !w ? '' : ['右', '左', '前', '後'].filter(k => w.sides[k].length)
+    .map(k => `<b>${{右:'右の窓', 左:'左の窓', 前:'正面', 後:'後方'}[k]}</b>：${esc(fmt(w.sides[k]))}`).join('<br>')
+    + (w.best ? '<br><span class="small">機窓の景色（雲がなければ）</span>' : '<span class="small">機窓から見える目印はありません</span>');
 }
 
 // ---------- 知らせ ----------
@@ -535,14 +643,24 @@ function drawScope() {
     if (ang < bd) { bd = ang; best = p; }
     const [x, y] = toXY(p.dir, p.elev);
     if (x < -60 || x > W + 60 || y < -20 || y > H + 20) return;
-    g.fillStyle = p.mil ? '#ff6b5b' : '#5bb8ff';
+    g.fillStyle = p.mil ? '#ff6b5b' : p.sun ? '#ffc93c' : '#5bb8ff';
     g.beginPath(); g.arc(x, y, p.hex === sel ? 7 : 5, 0, 7); g.fill();
     const ri = routeInfo(p);
     g.fillStyle = '#fff'; g.font = '12px sans-serif';
     g.fillText((p.cs || p.reg || '?') + (ri ? ' ' + ri.destName + '行き' : p.mil ? ' 軍用機' : ''), x + 9, y + 4);
   });
-  aimHex = best ? best.hex : null;
-  if (best) {
+  // 宇宙ステーション
+  let issAim = false;
+  if (issNow && issNow.el > -5) {
+    const ang = Math.hypot(dAz(issNow.az) * ce, issNow.el - elevNow), [x, y] = toXY(issNow.az, issNow.el);
+    if (x > -60 && x < W + 60 && y > -20 && y < H + 20) {
+      g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(x, y - 8); g.lineTo(x + 8, y); g.lineTo(x, y + 8); g.lineTo(x - 8, y); g.closePath(); g.fill();
+      g.font = 'bold 12px sans-serif'; g.fillText('ISS 国際宇宙ステーション', x + 11, y + 4);
+    }
+    if (ang < 12 && (!best || ang < bd)) issAim = true;
+  }
+  aimHex = !issAim && best ? best.hex : null;
+  if (best && !issAim) {
     const [x, y] = toXY(best.dir, best.elev);
     g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 14, 0, 7); g.stroke();
   }
@@ -550,7 +668,13 @@ function drawScope() {
   g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, 24); g.fillRect(0, H - 46, W, 46);
   g.fillStyle = '#fff'; g.font = '13px sans-serif';
   g.fillText(`向き：${dirName(head)} ${Math.round(head)}°　仰角 ${Math.round(elevNow)}°`, 8, 17);
-  if (best) {
+  if (issAim) {
+    const vis = issVisible(issNow, new Date());
+    g.font = 'bold 15px sans-serif'; g.fillStyle = '#ffffff';
+    g.fillText('照準：国際宇宙ステーション', 8, H - 26);
+    g.font = '12px sans-serif';
+    g.fillText(`高度${Math.round(issNow.alt)}km・${Math.round(issNow.range)}km先・${vis ? '肉眼で見えます' : '肉眼では見えない条件です'}`, 8, H - 9);
+  } else if (best) {
     g.font = 'bold 15px sans-serif'; g.fillStyle = best.mil ? '#ff8a7a' : '#ffd54f';
     g.fillText('照準：' + routeText(best), 8, H - 26);
     g.font = '12px sans-serif'; g.fillStyle = '#fff';
@@ -580,6 +704,107 @@ $('offMinus').onclick = () => changeOffset(-5);
 $('offPlus').onclick = () => changeOffset(5);
 showOffset();
 
+// ---------- 国際宇宙ステーション ----------
+let issRec = null, issNow = null, issPasses = [], issPassAt = null, issPassPos = null, issBusy = false, issMsg = '', issMarker = null;
+const issNotified = new Set(), WDAY = ['日', '月', '火', '水', '木', '金', '土'];
+async function loadTle() {
+  const c = lsGet('sora_tle', null);
+  if (c && Date.now() - c.t < 12 * 3600000) return c;
+  const lines = t => t.trim().split(/\r?\n/).map(s => s.trim()).filter(s => /^[12] 25544/.test(s));
+  const srcs = [
+    async () => { const j = await (await tfetch('https://api.wheretheiss.at/v1/satellites/25544/tles', 8000)).json(); return [j.line1, j.line2]; },
+    async () => lines(await (await tfetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE', 8000)).text()),
+    async () => { if (!RELAY_CF) return []; return lines(await (await tfetch(RELAY_CF + '/tle', 10000)).text()); }
+  ];
+  for (const f of srcs) {
+    try {
+      const [l1, l2] = await f();
+      if (/^1 25544/.test(l1 || '') && /^2 25544/.test(l2 || '')) { const o = {t:Date.now(), l1, l2}; lsSet('sora_tle', o); return o; }
+    } catch (e) {}
+  }
+  return c; // 取れなければ古いものを使う
+}
+function issLook(date) {
+  const pv = satellite.propagate(issRec, date);
+  if (!pv || !pv.position) return null;
+  const gmst = satellite.gstime(date), ecf = satellite.eciToEcf(pv.position, gmst);
+  const la = satellite.ecfToLookAngles({longitude:pos[0] * D2R, latitude:pos[1] * D2R, height:0.1}, ecf);
+  const gd = satellite.eciToGeodetic(pv.position, gmst);
+  return {az:norm360(la.azimuth / D2R), el:la.elevation / D2R, range:la.rangeSat, alt:gd.height,
+    lat:satellite.degreesLat(gd.latitude), lon:satellite.degreesLong(gd.longitude), eci:pv.position};
+}
+function issLit(r, date) { // 宇宙ステーションに日が当たっているか（地球の影の外か）
+  const s = sunVec(date), dot = r.x * s[0] + r.y * s[1] + r.z * s[2];
+  if (dot > 0) return true;
+  return Math.hypot(r.x - dot * s[0], r.y - dot * s[1], r.z - dot * s[2]) > RE;
+}
+const issVisible = (L, d) => L.el > 10 && sunAt(pos[1], pos[0], d).el < -6 && issLit(L.eci, d);
+async function computePasses() {
+  if (!issRec || !pos || issBusy) return;
+  issBusy = true;
+  const start = Date.now(), step = 20000, end = start + 72 * 3600000, passes = [];
+  let cur = null, k = 0;
+  for (let t = start; t < end; t += step, k++) {
+    const d = new Date(t), L = issLook(d);
+    if (L && issVisible(L, d)) {
+      if (!cur) cur = {s:t, saz:L.az, max:L.el, e:t, eaz:L.az};
+      else { cur.e = t; cur.eaz = L.az; if (L.el > cur.max) cur.max = L.el; }
+    } else if (cur) { passes.push(cur); cur = null; if (passes.length >= 4) break; }
+    if (k % 400 === 0) await new Promise(r => setTimeout(r));
+  }
+  if (cur) passes.push(cur);
+  issPasses = passes.filter(p => p.e - p.s >= 40000);
+  issPassAt = Date.now(); issPassPos = pos.slice(); issBusy = false;
+  renderIss();
+}
+const hm = t => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const md = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}（${WDAY[d.getDay()]}）`; };
+function renderIss() {
+  const el = $('iss');
+  if (issMsg) { el.textContent = '国際宇宙ステーション：' + issMsg; return; }
+  if (!issRec) { el.textContent = '国際宇宙ステーション：軌道データを読み込み中…'; return; }
+  const now = Date.now(), lines = [];
+  if (issNow && issNow.el > 0) {
+    const vis = issVisible(issNow, new Date(now));
+    lines.push(`<b>いま地平線の上</b>：${dirName(issNow.az)} 仰角${Math.round(issNow.el)}°・${Math.round(issNow.range)}km先${vis ? '　<b style="color:#c0392b">肉眼で見えます！</b>' : '（空が明るいか地球の影の中で、肉眼では見えません）'}`);
+  }
+  const next = issPasses.find(p => p.e > now);
+  if (next) {
+    const on = next.s <= now;
+    lines.push(`${on ? '<b style="color:#c0392b">いま通過中</b>' : '次に見えるのは'}　${md(next.s)} ${hm(next.s)}〜${hm(next.e)}　${dirName(next.saz)}から${dirName(next.eaz)}へ　最大の高さ${Math.round(next.max)}°`);
+  } else if (issPassAt) lines.push('3日以内に肉眼で見える通過はありません');
+  else lines.push('見える時刻を計算中…');
+  el.innerHTML = '<b>国際宇宙ステーション</b>　' + lines.join('<br>');
+}
+function issTick() {
+  if (!issRec || !pos) return;
+  const now = Date.now();
+  issNow = issLook(new Date(now));
+  if (issNow) {
+    if (!issMarker) {
+      const e = document.createElement('div'); e.className = 'iss'; e.textContent = 'ISS';
+      issMarker = new mapboxgl.Marker({element:e}).setLngLat([issNow.lon, issNow.lat]).addTo(map);
+    } else issMarker.setLngLat([issNow.lon, issNow.lat]);
+  }
+  if (!issPassAt || now - issPassAt > 1800000 || (issPassPos && gcKm(issPassPos, pos) > 30)
+      || (issPasses[0] && issPasses[0].e < now)) computePasses();
+  const next = issPasses.find(p => p.e > now);
+  if (next && next.s - now <= 300000 && next.s - now > -60000 && !issNotified.has(next.s)) {
+    issNotified.add(next.s);
+    alertMsg(`まもなく宇宙ステーションが見えます：${hm(next.s)}から ${dirName(next.saz)}の空`, null, true);
+  }
+  renderIss();
+}
+async function startIss() {
+  if (typeof satellite === 'undefined') { issMsg = '計算の部品を読み込めませんでした'; renderIss(); return; }
+  renderIss();
+  const tle = await loadTle();
+  if (!tle) { issMsg = '軌道データを取得できませんでした（あとで開き直してください）'; renderIss(); return; }
+  issRec = satellite.twoline2satrec(tle.l1, tle.l2);
+  issTick();
+  setInterval(() => { if (!document.hidden) issTick(); }, 2000);
+}
+
 // ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
 const savedPos = lsGet('sora_lastpos', null);
 if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
@@ -594,6 +819,7 @@ if ('geolocation' in navigator) {
     e => { if (!pos) setPos(DEF, true); showErr('位置情報：' + e.message); },
     {enableHighAccuracy:false, maximumAge:30000, timeout:20000});
 } else if (!pos) setPos(DEF, true);
+startIss();
 </script>
 </body>
 </html>

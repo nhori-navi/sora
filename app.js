@@ -223,6 +223,7 @@ async function tick() {
     planes.forEach(p => { p.sun = sunlit(p, now); p.win = windowView(p); });
     sortPlanes();
     record(planes);
+    dayRecord(planes, now);
     noteNear(planes, now);
     notify(planes);
     render();
@@ -433,6 +434,7 @@ function record(list) {
     let e = zukan.types[code];
     if (!e) {
       e = zukan.types[code] = {n:0, first:d, last:d, mil:0};
+      if (p.type) dayNewType(p.type);
       if (p.type && !wasEmpty) {
         const cnt = Object.keys(zukan.types).filter(x => x !== '?').length;
         alertMsg(`新しい機種を発見：${typeName(p)}（図鑑 ${cnt}種目）`, p.hex, false);
@@ -704,6 +706,7 @@ function issTick() {
   if (!issRec || !pos) return;
   const now = Date.now();
   issNow = issLook(new Date(now));
+  if (issNow && issNow.el > 0 && issVisible(issNow, new Date(now))) dayIss(now);
   if (issNow) {
     if (!issMarker) {
       const e = document.createElement('div'); e.className = 'iss'; e.textContent = 'ISS';
@@ -910,6 +913,7 @@ function recordCities() {
       if (!wasEmpty) alertMsg(`新しい行き先：${c.name}（${Object.keys(cities.list).length}都市目）`, null, false);
     }
     c.n++; c.last = d;
+    dayCity(id, c.name, ap);
   });
   if (!changed) return;
   for (const k in cities.seen) if (cities.seen[k] !== d) delete cities.seen[k];
@@ -988,6 +992,187 @@ $('citiesReset').onclick = () => {
 };
 
 // ---------- 起動：前回の場所ですぐ始め、現在地が取れたら切り替える ----------
+// ---------- 今日の空のまとめ ----------
+// 1日ごとに30日分を残す。その日のうちは機体番号を覚えて同じ機体を数え直さないようにし、
+// 日が変わったら機体番号と座標は消して、数と地名だけを残す
+const DAY_KEEP = 30, SPOT_KM = 5, SPOT_MIN_MS = 180000, PAGE_T0 = Date.now();
+let skyDays = lsGet('sora_day_v1', null); if (!skyDays || !skyDays.days || typeof skyDays.days !== 'object') skyDays = {days:{}};
+let curSpot = null, daySaveTimer = null, dayView = null, muniP = null;
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function compactDays() {
+  const td = today(), cut = ymd(new Date(Date.now() - DAY_KEEP * 86400000));
+  Object.keys(skyDays.days).forEach(k => {
+    if (k < cut) { delete skyDays.days[k]; return; }
+    if (k === td) return;
+    const D = skyDays.days[k];
+    delete D.hx; delete D.sx;
+    (D.sp || []).forEach(s => { delete s.hx; delete s.p; delete s.try; });
+  });
+}
+compactDays();
+function dayGet() {
+  const td = today();
+  let D = skyDays.days[td];
+  if (!D) {
+    compactDays();
+    D = skyDays.days[td] = {n:0, hx:{}, ty:{}, nt:[], mil:{}, milN:0, ct:{}, near:null, sun:null, sx:{}, iss:0, sp:[]};
+    curSpot = null;
+  }
+  if (!D.hx) D.hx = {};
+  if (!D.sx) D.sx = {};
+  return D;
+}
+function daySave(force) {
+  if (force) { clearTimeout(daySaveTimer); daySaveTimer = null; lsSet('sora_day_v1', skyDays); return; }
+  if (daySaveTimer) return;
+  daySaveTimer = setTimeout(() => { daySaveTimer = null; lsSet('sora_day_v1', skyDays); }, 20000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') daySave(true); });
+window.addEventListener('pagehide', () => daySave(true));
+
+// いまいる「見た場所」を決める（前の場所から5km以上離れたら新しい場所）
+function spotFor(D, now) {
+  const unconf = usingDef || usingSaved;
+  let s = null;
+  if (unconf) s = D.sp.find(x => x.u) || null;
+  else {
+    let bd = SPOT_KM;
+    D.sp.forEach(x => { if (x.u || !x.p) return; const d = gcKm(x.p, pos); if (d <= bd) { bd = d; s = x; } });
+  }
+  if (!s) {
+    s = {name:unconf ? '位置未確認' : '', u:unconf ? 1 : 0, p:[+pos[0].toFixed(2), +pos[1].toFixed(2)], from:now, to:now, n:0, hx:{}, near:null};
+    D.sp.push(s);
+  }
+  if (curSpot && curSpot !== s && D.sp.includes(curSpot)) {
+    const c = curSpot; // 移動中に3分未満通っただけの場所は、場所ごとの欄から外す（合計には残る）
+    if (!c.u && c.to - c.from < SPOT_MIN_MS && now - c.to < 60000) D.sp.splice(D.sp.indexOf(c), 1);
+  }
+  curSpot = s;
+  if (!s.hx) s.hx = {};
+  if (!s.u && !s.name && now - (s.try || 0) > 300000) { s.try = now; spotName(s, pos.slice()); }
+  return s;
+}
+const nearRec = (p, now) => ({cs:p.cs, reg:p.reg, ty:p.type, km:Math.round(p.dist * 10) / 10, alt:p.altM, t:now});
+function dayRecord(list, now) {
+  if (!pos) return;
+  // 起動直後は前回の場所で表示していることが多いので、1分は現在地が取れるのを待つ
+  if ((usingDef || usingSaved) && now - PAGE_T0 < 60000) return;
+  const D = dayGet(), s = spotFor(D, now);
+  s.to = now;
+  list.forEach(p => {
+    if (p.ground) return;
+    if (!D.hx[p.hex]) {
+      D.hx[p.hex] = 1; D.n++;
+      const code = p.type || '?';
+      D.ty[code] = (D.ty[code] || 0) + 1;
+      if (p.mil) { D.milN++; D.mil[code] = (D.mil[code] || 0) + 1; }
+    }
+    if (!s.hx[p.hex]) { s.hx[p.hex] = 1; s.n++; }
+    if (!s.near || p.dist < s.near.km) s.near = nearRec(p, now);
+    if (!s.u && (!D.near || p.dist < D.near.km)) D.near = nearRec(p, now);
+    if (p.sun && !D.sx[p.hex]) {
+      D.sx[p.hex] = 1;
+      if (!D.sun) D.sun = {n:0, t0:now, t1:now, k:p.sun.kind};
+      D.sun.n++; D.sun.t1 = now; D.sun.k = p.sun.kind;
+    }
+  });
+  daySave(false);
+  if ($('day').style.display === 'block' && dayView === today()) renderDay(dayView);
+}
+function dayNewType(code) { const D = dayGet(); if (!D.nt.includes(code)) { D.nt.push(code); daySave(false); } }
+function dayCity(id, name, ap) {
+  const D = dayGet();
+  if (!D.ct[id]) { D.ct[id] = {name, km:Math.round(gcKm(pos || DEF, [ap.lon, ap.lat]))}; daySave(false); }
+}
+function dayIss(now) { const D = dayGet(); if (!D.iss) { D.iss = now; daySave(false); } }
+
+// 地名（市区町村）は国土地理院の仕組みで調べる（保存してよい）
+function loadMuni() {
+  if (muniP) return muniP;
+  muniP = new Promise((res, rej) => {
+    window.GSI = window.GSI || {};
+    const sc = document.createElement('script');
+    sc.src = 'https://maps.gsi.go.jp/js/muni.js';
+    sc.onload = () => res(window.GSI.MUNI_ARRAY || {});
+    sc.onerror = () => { muniP = null; rej(new Error('市区町村の一覧を読み込めません')); };
+    document.head.appendChild(sc);
+  });
+  return muniP;
+}
+async function spotName(s, pt) {
+  try {
+    const r = await tfetch(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${pt[1].toFixed(5)}&lon=${pt[0].toFixed(5)}`, 10000);
+    const j = await r.json(), cd = String((j && j.results && j.results.muniCd) || '');
+    if (!cd) { s.name = '地名なし'; return; }
+    const M = await loadMuni(), v = M[cd] || M[cd.padStart(5, '0')] || M[cd.replace(/^0+/, '')];
+    if (!v) return;
+    s.name = String(v).split(',')[3].replace(/\s+/g, '');
+    daySave(false);
+    if ($('day').style.display === 'block' && dayView === today()) renderDay(dayView);
+  } catch (e) {} // 取れなければ5分後にやり直す
+}
+
+// 画面
+function dateLabel(k) { const [y, m, d] = k.split('-').map(Number); return `${m}月${d}日（${WDAY[new Date(y, m - 1, d).getDay()]}）`; }
+const tyName = c => c === '?' ? '機種不明' : (TYPE[c] || c);
+function csRoute(cs) { const r = routeEntry(cs); return r && !r.none && r.a ? r.a.map(apName).join(' → ') : ''; }
+function nearHtml(n) {
+  if (!n) return 'なし';
+  const who = [n.cs || n.reg, n.ty ? tyName(n.ty) : ''].filter(Boolean).join('・'), rt = n.cs ? csRoute(n.cs) : '';
+  return `${esc(who)}${rt ? '　' + esc(rt) : ''}<br><span class="small">${n.km.toFixed(1)}km先・高度${n.alt.toLocaleString()}m（${hm(n.t)}）</span>`;
+}
+function issDayText(D, isToday) {
+  const t = [];
+  if (D && D.iss) t.push(`肉眼で見える時間にアプリを開いていました（${hm(D.iss)}）`);
+  if (isToday) {
+    const until = new Date(); until.setDate(until.getDate() + 1); until.setHours(6, 0, 0, 0);
+    const ps = issPasses.filter(p => p.e > Date.now() && p.s < until.getTime());
+    if (ps.length) t.push('今夜の見える通過：' + ps.map(p => `${hm(p.s)}〜${hm(p.e)} ${dirName(p.saz)}から${dirName(p.eaz)}へ（最大${Math.round(p.max)}°）`).join('、'));
+    else if (issPassAt) t.push('今夜は肉眼で見える通過はありません');
+  }
+  return t.length ? t.join('<br>') : 'なし';
+}
+function renderDay(k) {
+  dayView = k;
+  const D = skyDays.days[k], isToday = k === today();
+  $('dayTitle').textContent = (isToday ? '今日の空　' : '') + dateLabel(k) + (isToday ? '' : 'の空');
+  const row = (t, v) => `<div class="drow"><b>${t}</b>　${v}</div>`;
+  let h = '';
+  if (!D || !D.n) h = '<div class="drow small">この日の記録はまだありません。アプリを開いている間に見えた機体がここにたまっていきます</div>';
+  else {
+    const types = Object.keys(D.ty).filter(c => c !== '?');
+    const cts = Object.values(D.ct || {}), far = cts.reduce((m, c) => !m || c.km > m.km ? c : m, null);
+    const mils = Object.entries(D.mil || {}).sort((a, b) => b[1] - a[1]).map(([c, n]) => tyName(c) + (n > 1 ? `×${n}` : ''));
+    h += `<div class="dbig">見た機体 ${D.n}機・${types.length}機種</div>`;
+    h += row('図鑑に初登場', D.nt.length ? esc(D.nt.map(tyName).join('、')) : 'なし');
+    h += row('行き先', cts.length ? `${cts.length}都市　いちばん遠いのは${esc(far.name)}（${far.km.toLocaleString()}km）` : 'なし');
+    h += row('軍用機', D.milN ? `${D.milN}機（${esc(mils.join('、'))}）` : 'なし');
+    h += row('いちばん近くを通った機体', nearHtml(D.near));
+    h += row('夕日・朝日', D.sun ? `${D.sun.k}を浴びた機体 ${D.sun.n}機（${hm(D.sun.t0)}〜${hm(D.sun.t1)}）` : 'なし');
+  }
+  h += row('宇宙ステーション', issDayText(D, isToday));
+  const sp = (D && D.sp) || [];
+  if (sp.length) {
+    h += '<div class="dhead">見た場所</div>' + sp.map((s, i) => {
+      const nm = s.name || (s.u ? '位置未確認' : `場所${i + 1}（地名を調べ中）`);
+      const nr = s.near ? `${esc(s.near.cs || s.near.reg || tyName(s.near.ty))}（${s.near.km.toFixed(1)}km）` : 'なし';
+      return `<div class="dspot"><b>${esc(nm)}</b>　${hm(s.from)}〜${hm(s.to)}　${s.n}機<br><span class="small">いちばん近く：${nr}</span></div>`;
+    }).join('');
+  }
+  $('dayBody').innerHTML = h;
+  const ks = Object.keys(skyDays.days).sort().reverse();
+  $('dayList').innerHTML = ks.length ? ks.map(x => {
+    const E = skyDays.days[x];
+    return `<tr data-k="${esc(x)}"${x === k ? ' class="dsel"' : ''}><td>${dateLabel(x)}</td><td>${E.n}機</td><td>${Object.keys(E.ty || {}).filter(c => c !== '?').length}機種</td><td>${(E.sp || []).length}か所</td></tr>`;
+  }).join('') : '<tr><td colspan="4">まだ記録がありません</td></tr>';
+  $('dayList').querySelectorAll('tr[data-k]').forEach(tr => tr.onclick = () => { renderDay(tr.dataset.k); $('day').scrollTop = 0; });
+}
+$('dayBtn').onclick = () => { renderDay(today()); $('day').style.display = 'block'; $('day').scrollTop = 0; };
+$('dayClose').onclick = () => { $('day').style.display = 'none'; dayView = null; };
+$('dayReset').onclick = () => {
+  if (!confirm('今日の空の記録（30日分）をすべて消します。よろしいですか？')) return;
+  skyDays = {days:{}}; curSpot = null; daySave(true); renderDay(today());
+};
 const savedPos = lsGet('sora_lastpos', null);
 if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
 if ('geolocation' in navigator) {

@@ -60,11 +60,17 @@ label{white-space:nowrap;margin-right:6px}
 #detail{display:none;border:2px solid #333;border-radius:6px;background:#fff;padding:6px 8px;margin:6px 0;line-height:1.5}
 #detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
 #toast{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:92%;text-align:center;cursor:pointer}
-#zukan,#cities{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
+#zukan,#cities,#day{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
 #citiesMap{height:45vh;margin-top:8px;border-radius:6px}
 .reset{float:right;background:#fff;color:#c0392b;border:1px solid #c0392b;border-radius:4px;font-size:13px}
-#zukan table,#cities table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
-#zukan td,#zukan th,#cities td,#cities th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
+#zukan table,#cities table,#day table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+#zukan td,#zukan th,#cities td,#cities th,#day td,#day th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
+.dbig{font-size:20px;font-weight:bold;margin:10px 0 4px}
+.drow{padding:6px 0;border-bottom:1px solid #eee;line-height:1.5}
+.dhead{margin-top:14px;font-weight:bold;color:#1f3b73}
+.dspot{padding:6px 8px;margin:6px 0;border:1px solid #ddd;border-left:6px solid #1f6fd1;border-radius:6px;line-height:1.5}
+#dayList tr{cursor:pointer}
+#dayList tr.dsel{background:#eef3fb}
 </style>
 </head>
 <body>
@@ -89,6 +95,13 @@ label{white-space:nowrap;margin-right:6px}
   <table><thead><tr><th>都市</th><th>回数</th><th>初めて</th><th>距離</th></tr></thead><tbody id="citiesBody"></tbody></table>
   <div class="small" style="margin-top:8px">近く（10km以内）を通った旅客機の行き先を、同じ便は1日1回だけ数えます。</div>
 </div>
+<div id="day">
+  <button id="dayClose">閉じる</button> <b id="dayTitle">今日の空</b><button id="dayReset" class="reset">記録を消す</button>
+  <div id="dayBody"></div>
+  <div class="dhead">これまでの日（30日分・日付を押すとその日のまとめ）</div>
+  <table><thead><tr><th>日付</th><th>機体</th><th>機種</th><th>場所</th></tr></thead><tbody id="dayList"></tbody></table>
+  <div class="small" style="margin-top:8px">アプリを開いている間に、表示範囲内に見えた機体を数えます（同じ機体は1日1回・地上の機体は除く）。移動中に短く通り過ぎた場所は、場所ごとの欄には出さず、合計にだけ入れます。地名：国土地理院</div>
+</div>
 <div id="panel">
   <div>
     範囲：<select id="rad"><option>10</option><option>20</option><option selected>30</option><option>50</option><option>100</option><option>150</option></select>km
@@ -96,7 +109,7 @@ label{white-space:nowrap;margin-right:6px}
     <label><input type="checkbox" id="ground">地上も</label>
   </div>
   <div>
-    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button><button id="citiesBtn">都市</button>
+    <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button><button id="citiesBtn">都市</button><button id="dayBtn">今日の空</button>
     <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
     <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
   </div>
@@ -113,11 +126,11 @@ label{white-space:nowrap;margin-right:6px}
   <div id="list"></div>
   <div id="err" class="small" style="color:#c00"></div>
   <div class="small"><span id="upd"></span></div>
-  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine</div>
+  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=7"></script>
-<script src="data.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="config.js?v=8"></script>
+<script src="data.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

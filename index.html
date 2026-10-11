@@ -114,7 +114,7 @@ label{white-space:nowrap;margin-right:6px}
     <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
   </div>
   <div id="skyCtl" style="display:none">
-    <button id="camBtn">カメラ</button>
+  <button id="camBtn">カメラ</button><button id="conBtn">星座</button>
     補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
     <span id="fovCtl" style="display:none">画角 <button id="fovMinus">狭く</button><button id="fovPlus">広く</button></span><br>
     <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span>
@@ -126,11 +126,12 @@ label{white-space:nowrap;margin-right:6px}
   <div id="list"></div>
   <div id="err" class="small" style="color:#c00"></div>
   <div class="small"><span id="upd"></span></div>
-  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　地名：国土地理院</div>
+  <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=9"></script>
-<script src="data.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="config.js?v=10"></script>
+<script src="data.js?v=10"></script>
+<script src="constellations.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

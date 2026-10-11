@@ -100,7 +100,7 @@ label{white-space:nowrap;margin-right:6px}
   <button id="dayClose">閉じる</button> <b id="dayTitle">今日の空</b><button id="dayReset" class="reset">記録を消す</button>
   <div id="dayBody"></div>
   <div class="dhead">これまでの日（30日分・日付を押すとその日のまとめ）</div>
-  <table><thead><tr><th>日付</th><th>機体</th><th>機種</th><th>場所</th></tr></thead><tbody id="dayList"></tbody></table>
+  <table><thead><tr><th>日付</th><th>機体</th><th>機種</th><th>場所</th><th>点</th></tr></thead><tbody id="dayList"></tbody></table>
   <div class="small" style="margin-top:8px">アプリを開いている間に、表示範囲内に見えた機体を数えます（同じ機体は1日1回・地上の機体は除く）。移動中に短く通り過ぎた場所は、場所ごとの欄には出さず、合計にだけ入れます。地名：国土地理院</div>
 </div>
 <div id="panel">
@@ -131,9 +131,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=12"></script>
-<script src="data.js?v=12"></script>
-<script src="constellations.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="data.js?v=13"></script>
+<script src="constellations.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -73,6 +73,9 @@ label{white-space:nowrap;margin-right:6px}
 #dayList tr.dsel{background:#eef3fb}
 #toast.catch{background:#1e8e5a}
 #toast.badge{background:#b8860b}
+#share{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:25;background:#fff;overflow:auto;padding:12px}
+#shareImg{display:block;width:100%;max-width:540px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+#shareBtn{background:#1f3b73;color:#fff;border:none;border-radius:4px}
 #badge{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
 .bcard{border:1px solid #ddd;border-left:6px solid #bbb;border-radius:6px;padding:6px 8px;margin:6px 0;line-height:1.7;color:#888}
 .bcard.got{border-left-color:#d4a017;color:#222}
@@ -103,13 +106,21 @@ label{white-space:nowrap;margin-right:6px}
   <table><thead><tr><th>都市</th><th>回数</th><th>初めて</th><th>距離</th></tr></thead><tbody id="citiesBody"></tbody></table>
   <div class="small" style="margin-top:8px">近く（10km以内）を通った旅客機の行き先を、同じ便は1日1回だけ数えます。</div>
 </div>
+<div id="share">
+  <button id="shareClose">閉じる</button> <b>シェアカード</b>
+  <div style="margin:8px 0"><label><input type="checkbox" id="sharePlace">市区町村名を入れる</label></div>
+  <img id="shareImg" alt="シェアカード">
+  <div style="margin-top:8px"><button id="shareSend" class="rideBtn">共有する（LINE・Xなど）</button><button id="shareDl">画像を保存する</button></div>
+  <div id="shareMsg" class="small"></div>
+  <div class="small" style="margin-top:6px">正確な位置や住所は入りません。画像はスマホの中で作り、外へは送りません。</div>
+</div>
 <div id="badge">
   <button id="badgeClose">閉じる</button> <b>バッジ</b>　<span id="badgeSum" class="small"></span>
   <div id="badgeBody"></div>
   <div class="small" style="margin-top:8px">段階は 銅→銀→金→白金→ダイヤ。色のついた段階がもらったバッジです（長押しでもらった日）。航空会社・行き先の国・軍用機などは v15 から数え始めます。</div>
 </div>
 <div id="day">
-  <button id="dayClose">閉じる</button> <b id="dayTitle">今日の空</b><button id="dayReset" class="reset">記録を消す</button>
+  <button id="dayClose">閉じる</button> <b id="dayTitle">今日の空</b> <button id="shareBtn">シェア</button><button id="dayReset" class="reset">記録を消す</button>
   <div id="dayBody"></div>
   <div class="dhead">これまでの日（30日分・日付を押すとその日のまとめ）</div>
   <table><thead><tr><th>日付</th><th>機体</th><th>機種</th><th>場所</th><th>点</th></tr></thead><tbody id="dayList"></tbody></table>
@@ -143,9 +154,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=15"></script>
-<script src="data.js?v=15"></script>
-<script src="constellations.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="config.js?v=16"></script>
+<script src="data.js?v=16"></script>
+<script src="constellations.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

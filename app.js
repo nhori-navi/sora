@@ -256,7 +256,7 @@ function saveRoutes() {
   }, 1000);
 }
 const apConv = a => ({iata:a.iata_code || '', name:a.name || '', loc:a.municipality || '',
-  lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3)});
+  lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3), cc:a.country_iso_name || ''});
 async function fetchRoutes(list) {
   if (routeBusy) return false;
   const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)).map(p => p.cs))].slice(0, 10);
@@ -1450,6 +1450,143 @@ renderDay = function (k) {
     tr.appendChild(td);
   });
 };
+
+// ---------- バッジ（v15） ----------
+// 記録からバッジを判定する。段階は 銅→銀→金→白金→ダイヤ。v15より前の記録で届いている分は、最初に黙って付ける
+const MEDAL = ['銅', '銀', '金', '白金', 'ダイヤ'];
+const AL_DOM = ['JAL', 'ANA', 'ADO', 'SKY', 'SFJ', 'SNJ', 'JJP', 'APJ', 'SJO', 'JTA', 'IBX', 'FDA', 'ZIP']; // 国内13社
+const AL_DOM_ALL = AL_DOM.concat(['AKX', 'JLJ', 'NCA']), AL_MIL = ['RCH', 'CNV', 'PAT'];
+const REGION = {
+  'アジア':'KR KP CN TW HK MO MN PH VN TH SG MY ID BN KH LA MM IN LK MV NP BD PK BT TL KZ UZ KG TJ TM',
+  '中東':'AE QA SA BH KW OM IL JO LB IR IQ SY YE',
+  'ヨーロッパ':'GB IE FR DE NL BE LU CH AT IT ES PT DK SE NO FI IS PL CZ SK HU GR RO BG HR SI RS RU UA BY EE LV LT TR CY MT',
+  '北米':'US CA MX PR',
+  'オセアニア':'AU NZ GU MP PW FJ PG NC PF FM MH'};
+const regionOf = cc => Object.keys(REGION).find(r => REGION[r].split(' ').includes(cc)) || '';
+let badge = lsGet('sora_badge_v1', null);
+const badgeFirst = !badge || !badge.got;
+if (badgeFirst) badge = {got:{}, n:{mil:0, sun:0, night:0, top:0, srare:0}, al:{}, cc:{}, places:{}, days:{}};
+const bSave = () => lsSet('sora_badge_v1', badge);
+const homeP = () => pos || DEF;
+const BADGES = [ // [id, 分類, 名前, 段階, 値を出す関数, 単位]
+  ['catch', 'キャッチ', 'キャッチした機数', [1, 10, 50, 100, 500], () => catchData.total || 0, '機'],
+  ['ctype', 'キャッチ', 'キャッチした機種', [5, 15, 30], () => Object.keys(catchData.types).filter(c => c !== '?').length, '機種'],
+  ['zukan', '図鑑', '見た機種', [20, 50, 100], () => Object.keys(zukan.types).filter(c => c !== '?').length, '機種'],
+  ['srare', '珍しさ', '激レアをキャッチ', [1, 10], () => badge.n.srare, '回'],
+  ['mil', '珍しさ', '軍用機をキャッチ', [1, 5, 20], () => badge.n.mil, '回'],
+  ['sun', '空の様子', '夕日・朝日の機体をキャッチ', [1, 10], () => badge.n.sun, '回'],
+  ['night', '空の様子', '夜にキャッチ', [1, 10], () => badge.n.night, '回'],
+  ['top', '空の様子', '真上（見上げ角70°以上）でキャッチ', [1], () => badge.n.top, '回'],
+  ['iss', '宇宙', '宇宙ステーションをキャッチ', [1, 5], () => (catchData.iss && catchData.iss.n) || 0, '回'],
+  ['score', 'スコア', '1日のスコア', [300, 600, 1000], () => (catchData.best && catchData.best.pt) || 0, '点'],
+  ['lv3', 'カード', 'Lv3の機種が生まれる', [1], () => Object.values(catchData.types).filter(t => t.n >= 10).length, '機種'],
+  ['lv5', 'カード', 'Lv5の機種が生まれる', [1], () => Object.values(catchData.types).filter(t => t.n >= 100).length, '機種'],
+  ['al', '航空会社', 'キャッチした航空会社', [5, 15, 30], () => Object.keys(badge.al).length, '社'],
+  ['aldom', '航空会社', '国内13社をすべてキャッチ', [13], () => AL_DOM.filter(a => badge.al[a]).length, '社'],
+  ['alint', '航空会社', '海外の航空会社をキャッチ', [5, 10, 20], () => Object.keys(badge.al).filter(a => !AL_DOM_ALL.includes(a)).length, '社'],
+  ['city', '行き先', '上空を通った便の行き先の都市', [10, 30, 60], () => Object.keys(cities.list).length, '都市'],
+  ['far', '行き先', 'いちばん遠い行き先', [2000, 5000, 8000, 10000], () => Math.round(Object.values(cities.list).reduce((m, c) => Math.max(m, gcKm(homeP(), [c.lon, c.lat])), 0)), 'km'],
+  ['cc', '海外', '行き先の国', [5, 15], () => Object.keys(badge.cc).length, 'か国'],
+  ['region', '海外', '世界の5地域へ（アジア・中東・欧州・北米・オセアニア）', [5], () => new Set(Object.keys(badge.cc).filter(c => c !== 'JP').map(regionOf).filter(Boolean)).size, '地域'],
+  ['place', '場所', '空を見た市区町村', [5, 20], () => Object.keys(badge.places).length, 'か所'],
+  ['days', '日数', 'アプリで空を見た日（通算）', [7, 30, 100], () => Object.keys(badge.days).length, '日'],
+  ['cal', '方角', '方角合わせに成功', [1], () => cal ? 1 : 0, '回']];
+const tierName = (b, i) => b[3].length > 1 ? MEDAL[i] : '';
+// 今日の空の記録から、見た場所と日数を集める（記録は30日で消えるので、ここに残しておく）
+function badgeCollect() {
+  Object.keys(skyDays.days).forEach(k => {
+    const D = skyDays.days[k];
+    if (D.n) badge.days[k] = 1;
+    (D.sp || []).forEach(s => { if (s.name && !s.u && s.name !== '地名なし' && s.name !== '位置未確認') badge.places[s.name] = 1; });
+  });
+}
+let badgeQueue = [], badgeToastTimer = null;
+function badgeCheck(quiet) {
+  badgeCollect();
+  const got = [];
+  BADGES.forEach(b => {
+    let v = 0; try { v = b[4](); } catch (e) {}
+    const g = badge.got[b[0]] || (badge.got[b[0]] = {d:[]});
+    for (let i = g.d.length; i < b[3].length && v >= b[3][i]; i++) {
+      g.d.push(quiet ? 'v15より前' : today());
+      if (!quiet) got.push(b[2] + (tierName(b, i) ? `（${tierName(b, i)}）` : ''));
+    }
+  });
+  bSave();
+  if (got.length) { badgeQueue = badgeQueue.concat(got); badgeShow(); }
+  if ($('badge').style.display === 'block') renderBadges();
+}
+// キャッチの知らせと重ならないよう、表示中なら少し待ってから出す
+function badgeShow() {
+  clearTimeout(badgeToastTimer);
+  badgeToastTimer = setTimeout(() => {
+    if (!badgeQueue.length) return;
+    alertMsg('バッジ獲得！ ' + badgeQueue.join('・'), null, true);
+    $('toast').classList.add('badge');
+    badgeQueue = [];
+  }, $('toast').style.display === 'block' ? 3500 : 0);
+}
+const alertMsgV12 = alertMsg;
+alertMsg = function (text, hex, strong) { $('toast').classList.remove('badge'); alertMsgV12(text, hex, strong); };
+// キャッチのたびに、航空会社・軍用機・夕日・夜・真上・激レアを数える（v13 の doCatch を包み直す）
+const doCatchV13 = doCatch;
+doCatch = function (p, now) {
+  const srare = rarityOf(p.type || '?')[1] === '激レア';
+  doCatchV13(p, now);
+  const al = (p.cs || '').slice(0, 3);
+  if (/^[A-Z]{3}\d/.test(p.cs || '') && !AL_MIL.includes(al)) badge.al[al] = (badge.al[al] || 0) + 1;
+  if (p.mil) badge.n.mil++;
+  if (p.sun) badge.n.sun++;
+  if (pos && sunAt(pos[1], pos[0], new Date(now)).el < -6) badge.n.night++;
+  if (p.elev >= 70) badge.n.top++;
+  if (srare) badge.n.srare++;
+  badgeCheck(false);
+};
+// 行き先の国（v15 から apConv が国の記号 cc を残す）
+const dayCityV8 = dayCity;
+dayCity = function (id, name, ap) {
+  dayCityV8(id, name, ap);
+  if (ap && ap.cc && !badge.cc[ap.cc]) { badge.cc[ap.cc] = 1; badgeCheck(false); }
+};
+// 画面
+function renderBadges() {
+  let h = '', cat = '', nGot = 0, nAll = 0;
+  BADGES.forEach(b => {
+    let v = 0; try { v = b[4](); } catch (e) {}
+    const g = badge.got[b[0]] || {d:[]}, k = g.d.length;
+    nAll += b[3].length; nGot += k;
+    if (b[1] !== cat) { cat = b[1]; h += `<div class="dhead">${esc(cat)}</div>`; }
+    const tiers = b[3].map((t, i) => `<span class="bt${i < k ? ' on' : ''}" title="${esc(g.d[i] || '')}">${tierName(b, i) || '達成'}${b[3].length > 1 ? ' ' + t.toLocaleString() : ''}</span>`).join('');
+    const next = b[3][k], last = g.d[k - 1];
+    h += `<div class="bcard${k ? ' got' : ''}"><b>${esc(b[2])}</b><br>${tiers}<br><span class="small">` +
+      (next != null ? `いま ${v.toLocaleString()}${b[5]}・あと ${(next - v).toLocaleString()}${b[5]}` : `すべて達成（${v.toLocaleString()}${b[5]}）`) +
+      (last ? `　最後にもらった日：${esc(last)}` : '') + '</span></div>';
+  });
+  $('badgeSum').textContent = `${nGot} / ${nAll}`;
+  $('badgeBody').innerHTML = h;
+}
+const badgeOpen = () => $('badge').style.display === 'block';
+const badgeCloseBase = () => { $('badge').style.display = 'none'; };
+$('badgeBtn').onclick = () => {
+  if (badgeOpen()) return;
+  badgeCheck(false); renderBadges(); $('badge').style.display = 'block'; $('badge').scrollTop = 0;
+  navPush('badge', badgeOpen, badgeCloseBase);
+};
+$('badgeClose').onclick = () => navClose('badge', badgeCloseBase);
+// 今日の空に「この日にもらったバッジ」
+const renderDayV13 = renderDay;
+renderDay = function (k) {
+  renderDayV13(k);
+  const list = [];
+  BADGES.forEach(b => { const g = badge.got[b[0]]; if (g) g.d.forEach((d, i) => { if (d === k) list.push(b[2] + (tierName(b, i) ? `（${tierName(b, i)}）` : '')); }); });
+  if (!list.length) return;
+  const el = document.createElement('div'); el.className = 'drow';
+  el.innerHTML = `<b>もらったバッジ</b>　${esc(list.join('、'))}`;
+  const sp = [...$('dayBody').querySelectorAll('.dhead')].find(x => x.textContent === '見た場所');
+  $('dayBody').insertBefore(el, sp || null);
+};
+badgeCheck(badgeFirst);
+setInterval(() => { if (!document.hidden) badgeCheck(false); }, 15000);
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

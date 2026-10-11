@@ -1452,6 +1452,45 @@ renderDay = function (k) {
 };
 
 const savedPos = lsGet('sora_lastpos', null);
+// ---------- 戻る操作（v14） ----------
+// 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、
+// スマホの「戻る」操作で、アプリを閉じずにその画面だけを閉じる
+const navStack = [];
+function navPush(name, isOpen, close) {
+  try { history.pushState({sora:name}, ''); } catch (e) { return; }
+  navStack.push({name, isOpen, close});
+}
+// 画面のボタンで閉じるとき：履歴が積んであれば「戻る」と同じ扱いにして、履歴を余らせない
+function navClose(name, close) {
+  const top = navStack[navStack.length - 1];
+  if (top && top.name === name && history.state && history.state.sora === name) history.back();
+  else close();
+}
+window.addEventListener('popstate', () => {
+  const e = navStack.pop();
+  if (e && e.isOpen()) e.close();
+});
+// 空に向ける
+const setSkyBase = setSky;
+setSky = function (on) {
+  if (on && !sky) { setSkyBase(true); navPush('sky', () => sky, () => setSkyBase(false)); }
+  else if (!on && sky) navClose('sky', () => setSkyBase(false));
+};
+$('skyBack').onclick = e => { e.stopPropagation(); setSky(false); };
+// 図鑑・都市・今日の空
+[['zukan', 'zukanBtn', 'zukanClose'], ['cities', 'citiesBtn', 'citiesClose'], ['day', 'dayBtn', 'dayClose']].forEach(([id, ob, cb]) => {
+  const open = $(ob).onclick, close = $(cb).onclick;
+  const isOpen = () => $(id).style.display === 'block';
+  $(ob).onclick = () => { const was = isOpen(); open(); if (!was && isOpen()) navPush(id, isOpen, close); };
+  $(cb).onclick = () => navClose(id, close);
+});
+// この便に乗る（機窓ビュー）
+const openRideBase = openRide, closeRideBase = closeRide;
+const rideOpen = () => $('ride').style.display === 'block';
+openRide = function (hex) { const was = rideOpen(); openRideBase(hex); if (!was && rideOpen()) navPush('ride', rideOpen, closeRideBase); };
+closeRide = function () { navClose('ride', closeRideBase); };
+$('rideExit').onclick = closeRide;
+
 // ---------- 星座と月の形（v10） ----------
 // 星座の線は constellations.js（CONSTEL）。空が暗いとき（太陽が地平線の下6°以下）だけ出す
 let conOn = lsGet('sora_con', true) !== false, conObjs = [];

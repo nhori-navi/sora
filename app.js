@@ -477,6 +477,7 @@ function onOri(e) {
   if (e.webkitCompassHeading != null) { o = orient(0, e.beta || 0, e.gamma || 0); o.az = e.webkitCompassHeading; }
   else if (e.type === 'deviceorientationabsolute' || e.absolute) o = orient(e.alpha, e.beta || 0, e.gamma || 0);
   else return;
+  o.el += offsetEl;
   const r = Math.PI / 180;
   if (!gotOri) { sx = Math.sin(o.az * r); sy = Math.cos(o.az * r); elevNow = o.el; }
   gotOri = true;
@@ -602,7 +603,7 @@ function setSky(on) {
 }
 $('skyBtn').onclick = () => setSky(!sky);
 $('scope').onclick = () => { if (aimHex && sel !== aimHex) select(aimHex, true); };
-function showOffset() { $('offVal').textContent = (offset > 0 ? '+' : '') + offset + '°'; }
+function showOffset() { const v = Math.round(offset); $('offVal').textContent = (v > 0 ? '+' : '') + v + '°'; }
 function changeOffset(d) { offset += d; showOffset(); lsSet('sora_offset', offset); }
 $('offMinus').onclick = () => changeOffset(-5);
 $('offPlus').onclick = () => changeOffset(5);
@@ -1178,6 +1179,63 @@ $('dayReset').onclick = () => {
   if (!confirm('今日の空の記録（30日分）をすべて消します。よろしいですか？')) return;
   skyDays = {days:{}}; curSpot = null; daySave(true); renderDay(today());
 };
+// ---------- 方角を合わせる（v11） ----------
+// カメラ画面の十字に本物の天体（月・惑星・1.5等より明るい星）を入れてボタンを押すと、
+// 計算上の位置とのずれを左右（offset）と上下（offsetEl）の補正に入れる
+let offsetEl = Number(lsGet('sora_offset_el', 0)) || 0, cal = lsGet('sora_cal', null), calUndo = null;
+const CAL_MAX = 20, CAL_MIN_EL = 5, CAL_MAX_EL = 65, CAL_MAX_DAZ = 30;
+const sgn = v => (v >= 0 ? '+' : '−') + Math.abs(Math.round(v));
+function angSep(az1, el1, az2, el2) {
+  const c = Math.sin(el1 * D2R) * Math.sin(el2 * D2R) + Math.cos(el1 * D2R) * Math.cos(el2 * D2R) * Math.cos((az1 - az2) * D2R);
+  return Math.acos(Math.max(-1, Math.min(1, c))) / D2R;
+}
+function calTargets() {
+  // 真上に近いと方角の数字が大きくぶれるので、高さ5〜65°の天体だけを使う
+  return skyObjs.filter(s => s.el >= CAL_MIN_EL && s.el <= CAL_MAX_EL && (s.kind !== 'star' || s.mag <= 1.5));
+}
+function calibrate() {
+  if (!camOn) { calMsg('カメラをオンにしてから押してください'); return; }
+  if (head == null || !gotOri) { calMsg('方位センサーの値を待っています'); return; }
+  let best = null;
+  calTargets().forEach(s => { const d = angSep(head, elevNow, s.az, s.el); if (d <= CAL_MAX && (!best || d < best.d)) best = {s, d}; });
+  if (!best) {
+    calMsg(elevNow > CAL_MAX_EL ? `真上に近すぎます。高さ${CAL_MAX_EL}°より低い月・惑星・明るい星で合わせてください`
+      : `照準の近く（${CAL_MAX}°以内）に合わせられる天体がありません。月・惑星・明るい星を十字に入れてください`);
+    return;
+  }
+  const s = best.s, dAz = ((s.az - head + 540) % 360) - 180, dEl = s.el - elevNow;
+  if (Math.abs(dAz) > CAL_MAX_DAZ) { calMsg(`${s.name}とのずれが大きすぎます（左右${sgn(dAz)}°）。十字に入れ直してから押してください`); return; }
+  calUndo = {offset, offsetEl, cal};
+  offset = Math.round((offset + dAz) * 10) / 10;
+  offsetEl = Math.round((offsetEl + dEl) * 10) / 10;
+  head = norm360(head + dAz); elevNow += dEl;
+  cal = {t:Date.now(), name:s.name, dAz:Math.round(dAz * 10) / 10, dEl:Math.round(dEl * 10) / 10};
+  lsSet('sora_offset', offset); lsSet('sora_offset_el', offsetEl); lsSet('sora_cal', cal);
+  showOffset();
+  calMsg(`${s.name}で合わせました：左右 ${sgn(dAz)}°、上下 ${sgn(dEl)}° 直しました`, true);
+}
+function calUndoDo() {
+  if (!calUndo) return;
+  const dAz = calUndo.offset - offset, dEl = calUndo.offsetEl - offsetEl;
+  offset = calUndo.offset; offsetEl = calUndo.offsetEl; cal = calUndo.cal; calUndo = null;
+  if (head != null) head = norm360(head + dAz);
+  elevNow += dEl;
+  lsSet('sora_offset', offset); lsSet('sora_offset_el', offsetEl); lsSet('sora_cal', cal);
+  showOffset();
+  calMsg('元に戻しました');
+}
+function calInfoText() {
+  if (!cal) return '方角はまだ合わせていません（カメラをオンにすると、明るい天体で合わせられます）';
+  const d = new Date(cal.t);
+  return `方角は${d.getMonth() + 1}/${d.getDate()} ${hm(cal.t)}に${cal.name}で合わせました（上下の補正 ${sgn(offsetEl)}°）。場所が変わったら合わせ直してください`;
+}
+function calMsg(text, undo) {
+  const el = $('calInfo');
+  el.innerHTML = `<b>${esc(text)}</b>` + (undo ? ' <button id="calUndo">元に戻す</button>' : '') + '<br>' + esc(calInfoText());
+  const u = $('calUndo'); if (u) u.onclick = calUndoDo;
+}
+$('calBtn').onclick = calibrate;
+$('calInfo').textContent = calInfoText();
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 星座と月の形（v10） ----------
 // 星座の線は constellations.js（CONSTEL）。空が暗いとき（太陽が地平線の下6°以下）だけ出す

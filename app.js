@@ -562,6 +562,7 @@ function drawScope() {
     const o = aim.o, [x, y] = aim.t === 'plane' ? toXY(o.dir, o.elev) : toXY(o.az, o.el);
     g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.stroke();
   }
+  catchStep(g, toXY, off);
   if (!aim && conAim) conAim.hi();
   // 文字
   g.shadowBlur = 0;
@@ -1155,6 +1156,7 @@ function renderDay(k) {
     h += row('軍用機', D.milN ? `${D.milN}機（${esc(mils.join('、'))}）` : 'なし');
     h += row('いちばん近くを通った機体', nearHtml(D.near));
     h += row('夕日・朝日', D.sun ? `${D.sun.k}を浴びた機体 ${D.sun.n}機（${hm(D.sun.t0)}〜${hm(D.sun.t1)}）` : 'なし');
+    h += row('キャッチ', catchDayHtml(D));
   }
   h += row('宇宙ステーション', issDayText(D, isToday));
   const sp = (D && D.sp) || [];
@@ -1236,6 +1238,102 @@ function calMsg(text, undo) {
 }
 $('calBtn').onclick = calibrate;
 $('calInfo').textContent = calInfoText();
+
+// ---------- キャッチ（v12） ----------
+// 空に向けて、照準の円（半径10°）に機体を2秒入れ続けると「キャッチ」。同じ機体は1日1回
+const CATCH_MS = 2000, CATCH_GAP = 500, CATCH_R = 10, CATCH_MIN_ELEV = 10, CATCH_MIN_AIM = 5, CATCH_LOG = 100;
+let catchData = lsGet('sora_catch_v1', null);
+if (!catchData || !catchData.types || !catchData.seen || !Array.isArray(catchData.log)) catchData = {types:{}, seen:{}, log:[], total:0};
+let catchT = null;
+const caughtToday = hex => !!catchData.seen[hex + '|' + today()];
+function catchStep(g, toXY, off) {
+  const now = Date.now();
+  // 今日キャッチ済みの機体には印を付ける
+  planes.forEach(p => {
+    if (p.ground || !caughtToday(p.hex)) return;
+    const [x, y] = toXY(p.dir, p.elev);
+    if (off(x, y)) return;
+    g.font = 'bold 13px sans-serif'; g.fillStyle = '#4cff9a'; g.textAlign = 'right'; g.fillText('✓', x - 7, y - 6); g.textAlign = 'left';
+  });
+  // 照準の円の中にいる、まだ捕まえていない機体のうち、いちばん真ん中に近いもの
+  let best = null;
+  if (elevNow >= CATCH_MIN_AIM) planes.forEach(p => {
+    if (p.ground || p.elev < CATCH_MIN_ELEV || caughtToday(p.hex)) return;
+    const d = angSep(head, elevNow, p.dir, p.elev);
+    if (d <= CATCH_R && (!best || d < best.d)) best = {p, d};
+  });
+  if (best) {
+    if (!catchT || (catchT.hex !== best.p.hex && now - catchT.lastIn > CATCH_GAP)) catchT = {hex:best.p.hex, t0:now, lastIn:now};
+    if (catchT.hex === best.p.hex) catchT.lastIn = now;
+  } else if (catchT && now - catchT.lastIn > CATCH_GAP) catchT = null;
+  if (!catchT) return;
+  const p = planes.find(x => x.hex === catchT.hex);
+  if (!p || caughtToday(p.hex)) { catchT = null; return; }
+  const k = Math.min(1, (now - catchT.t0) / CATCH_MS), [x, y] = toXY(p.dir, p.elev);
+  if (!off(x, y)) {
+    g.strokeStyle = 'rgba(76,255,154,.35)'; g.lineWidth = 5; g.beginPath(); g.arc(x, y, 22, 0, 7); g.stroke();
+    g.strokeStyle = '#4cff9a'; g.beginPath(); g.arc(x, y, 22, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.stroke();
+    g.font = 'bold 12px sans-serif'; g.fillStyle = '#4cff9a'; g.textAlign = 'center'; g.fillText('キャッチ中', x, y + 38); g.textAlign = 'left';
+  }
+  if (k >= 1 && best && best.p.hex === p.hex) { catchT = null; doCatch(p, now); }
+}
+function doCatch(p, now) {
+  const d = today(), code = p.type || '?';
+  catchData.seen[p.hex + '|' + d] = 1;
+  for (const k in catchData.seen) if (!k.endsWith('|' + d)) delete catchData.seen[k];
+  let e = catchData.types[code];
+  const first = !e && code !== '?';
+  if (!e) e = catchData.types[code] = {n:0, first:d, last:d, mil:0};
+  e.n++; e.last = d; if (p.mil) e.mil = 1;
+  catchData.total = (catchData.total || 0) + 1;
+  const ri = routeInfo(p), rec = {t:now, hex:p.hex, cs:p.cs, reg:p.reg, ty:code, mil:p.mil ? 1 : 0,
+    route:ri ? ri.text : '', km:Math.round(p.dist * 10) / 10, elev:Math.round(p.elev)};
+  catchData.log.unshift(rec); catchData.log.splice(CATCH_LOG);
+  lsSet('sora_catch_v1', catchData);
+  // 今日の空にも残す
+  const D = dayGet();
+  D.catN = (D.catN || 0) + 1;
+  (D.cat = D.cat || []).push({t:now, cs:p.cs || p.reg, ty:code, route:rec.route, mil:rec.mil});
+  D.cat.splice(0, Math.max(0, D.cat.length - 30));
+  daySave(true);
+  // 知らせ
+  const who = [p.cs || p.reg, typeName(p)].filter(Boolean).join(' ') + (ri ? ' ' + ri.text : '');
+  const ntypes = Object.keys(catchData.types).filter(c => c !== '?').length;
+  const msg = p.mil ? `軍用機をキャッチ！ ${who}` : first ? `キャッチ！ 初めての機種（${ntypes}機種目）${who}` : `キャッチ！ ${who}`;
+  alertMsg(msg, p.hex, p.mil || first);
+  $('toast').classList.add('catch');
+  try { if (navigator.vibrate) navigator.vibrate(p.mil || first ? [80, 60, 80, 60, 240] : [80, 60, 160]); } catch (er) {}
+  if ($('zukan').style.display === 'block') renderZukan();
+}
+// 知らせの色：キャッチのときだけ緑にする
+const alertMsgBase = alertMsg;
+alertMsg = function (text, hex, strong) { $('toast').classList.remove('catch'); alertMsgBase(text, hex, strong); };
+// 図鑑に「捕」の列と、キャッチした機種の数を足す
+const renderZukanBase = renderZukan;
+renderZukan = function () {
+  renderZukanBase();
+  const ks = Object.keys(zukan.types).sort((a, b) => zukan.types[b].n - zukan.types[a].n);
+  const rows = $('zukanBody').querySelectorAll('tr');
+  if (ks.length && rows.length === ks.length) rows.forEach((tr, i) => {
+    const c = catchData.types[ks[i]], td = document.createElement('td');
+    td.textContent = c ? c.n : '';
+    if (c) td.style.cssText = 'color:#1e8e5a;font-weight:bold';
+    tr.insertBefore(td, tr.children[2] || null);
+  });
+  const nc = Object.keys(catchData.types).filter(c => c !== '?').length;
+  $('zukanSum').textContent += `　うち${nc}機種をキャッチ（のべ${catchData.total || 0}機）`;
+};
+$('catchReset').onclick = () => {
+  if (!confirm('キャッチの記録をすべて消します（図鑑の「見た」記録は残ります）。よろしいですか？')) return;
+  catchData = {types:{}, seen:{}, log:[], total:0}; lsSet('sora_catch_v1', catchData); renderZukan();
+};
+// 今日の空のキャッチの行
+function catchDayHtml(D) {
+  if (!D || !D.catN) return 'なし<span class="small">（空に向けて、照準の円に機体を2秒入れるとキャッチ）</span>';
+  const list = D.cat.slice(-10).reverse().map(c => `${hm(c.t)} ${c.mil ? '<b style="color:#c0392b">軍</b> ' : ''}${esc(c.cs || '')} ${esc(tyName(c.ty))}${c.route ? '　' + esc(c.route) : ''}`).join('<br>');
+  return `${D.catN}機<br><span class="small">${list}</span>`;
+}
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 星座と月の形（v10） ----------
 // 星座の線は constellations.js（CONSTEL）。空が暗いとき（太陽が地平線の下6°以下）だけ出す

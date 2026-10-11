@@ -1822,6 +1822,172 @@ alertMsg = function (text, hex, strong) {
 };
 { const el = $('ntfFlash'), v = lsGet('sora_ntfFlash', null); if (v != null) el.checked = !!v; el.addEventListener('change', () => lsSet('sora_ntfFlash', el.checked)); }
 
+// ---------- 真上カウントダウン・星座を探す（v18） ----------
+// (0) 画面を光らせる知らせはやめて、振動だけにする（v17 の包みを外す）。星座を見つけた知らせは紺色
+alertMsg = function (text, hex, strong) { $('toast').classList.remove('con'); alertMsgV15(text, hex, strong); };
+// (1) 真上カウントダウン：10分以内に、見上げ角60°以上で近くを通る機体のうち、いちばん早いもの
+const CD_MIN = 10, CD_EL = 60, CD_KEEP_EL = 50, CD_NOW_S = 20;
+let cdOn = lsGet('sora_cd', true) !== false, cdT = null; // cdT = {hex, p, s:残り秒, km, el, now:真上の表示中, until}
+const cdDone = new Set(); // 振動した印（'30|hex'・'0|hex'）と、真上を過ぎた機体（'end|hex'）
+// 最接近のときの見上げ角（上昇・下降中は、高さの変わり方も少しだけ見込む）
+function cdElAt(p) {
+  if (p.ground || p.cpaT == null || p.cpaKm == null) return -1;
+  const alt = Math.max(0, p.altM + (p.rate || 0) * 0.3048 * Math.min(Math.max(p.cpaT, 0), 5));
+  return Math.atan2(alt, Math.max(p.cpaKm, 0.01) * 1000) / D2R;
+}
+const cdCand = p => !p.ground && p.cpaT != null && p.cpaT > 0 && p.cpaT <= CD_MIN && cdElAt(p) >= CD_EL;
+const cdFill = (t, p) => { t.p = p; t.s = Math.max(0, Math.round(p.cpaT * 60)); t.km = p.cpaKm; t.el = Math.round(cdElAt(p)); return t; };
+const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+function cdBuzz(k, hex, pat) {
+  if (cdDone.has(k + '|' + hex)) return;
+  cdDone.add(k + '|' + hex);
+  try { if (navigator.vibrate) navigator.vibrate(pat); } catch (e) {}
+}
+function cdPick(now) {
+  if (!cdOn || !pos || usingDef) return null;
+  // 「いま真上！」の表示中（20秒）
+  if (cdT && cdT.now) {
+    if (now < cdT.until) { const p = planes.find(x => x.hex === cdT.hex); if (p) cdT.p = p; return cdT; }
+    cdDone.add('end|' + cdT.hex); cdT = null;
+  }
+  // 追いかけている機体が最接近を過ぎたら「いま真上！」
+  const cur = cdT && planes.find(x => x.hex === cdT.hex);
+  if (cur && cur.cpaT != null && cur.cpaT <= 0 && cdT.s <= 60) {
+    cdBuzz('0', cur.hex, [400, 150, 400, 150, 400]);
+    return {hex:cur.hex, p:cur, s:0, km:cdT.km, el:cdT.el, now:true, until:now + CD_NOW_S * 1000};
+  }
+  // 追いかけ中の機体は、少し条件をゆるめて続ける（データの更新のゆれで消えないように）
+  const keep = cur && cur.cpaT != null && cur.cpaT > 0 && cur.cpaT <= CD_MIN + 1 && cdElAt(cur) >= CD_KEEP_EL;
+  const list = planes.filter(p => !cdDone.has('end|' + p.hex) && (cdCand(p) || (keep && p === cur))).sort((a, b) => a.cpaT - b.cpaT);
+  if (!list.length) return null;
+  const t = cdFill({hex:list[0].hex, now:false}, list[0]);
+  if (t.s <= 30) cdBuzz('30', t.hex, [150, 100, 150]);
+  return t;
+}
+function cdRender() {
+  const el = $('cdBar');
+  if (!cdT || !cdT.p) { el.style.display = 'none'; return; }
+  const p = cdT.p, ri = routeInfo(p);
+  const who = [p.cs || p.reg, ri ? ri.destName + '行き' : (p.mil ? '軍用機' : ''), p.type].filter(Boolean).join(' ');
+  el.className = cdT.now ? 'now' : cdT.s <= 30 ? 'soon' : '';
+  el.innerHTML = `<b>${cdT.now ? 'いま真上！ 見上げてください' : `あと${mmss(cdT.s)}で真上付近`}</b><br>` +
+    `<span>${esc(who)}（最接近${cdT.km.toFixed(1)}km・見上げ角${cdT.el}°）</span>`;
+  el.style.display = 'block';
+}
+$('cdBar').onclick = () => { if (cdT && sel !== cdT.hex && planes.some(p => p.hex === cdT.hex)) select(cdT.hex, true); };
+setInterval(() => { if (document.hidden) return; cdT = cdPick(Date.now()); cdRender(); }, 1000);
+{ const el = $('ntfCd'); el.checked = cdOn; el.addEventListener('change', () => { cdOn = el.checked; lsSet('sora_cd', cdOn); cdT = cdPick(Date.now()); cdRender(); }); }
+// カウントダウン中の機体には、前からある「まもなく真上付近を通過」の知らせを出さない（振動が重なるので）
+const notifyBase = notify;
+notify = function (list) {
+  if (cdOn) list.forEach(p => { if ((cdT && cdT.hex === p.hex) || cdCand(p)) notified.add('o' + p.hex); });
+  notifyBase(list);
+};
+// 空に向けた画面：その機体に点線の輪。画面の外なら、端にその方向への矢印
+function cdArrow(g, toXY) {
+  if (!cdT || !cdT.p || cdT.p.elev == null) return;
+  const box = $('scopeBox'), W = box.clientWidth, H = box.clientHeight, cx = W / 2, cy = H / 2;
+  const p = cdT.p, [x, y] = toXY(p.dir, p.elev), col = cdT.now ? '#ff6b5b' : cdT.s <= 30 ? '#ffb347' : '#ffd54f';
+  const lab = cdT.now ? 'いま真上！' : 'あと' + mmss(cdT.s);
+  const X0 = 30, X1 = W - 30, Y0 = 90, Y1 = H - 70;
+  g.save(); g.shadowBlur = 0; g.font = 'bold 13px sans-serif'; g.textAlign = 'center';
+  if (x > 12 && x < W - 12 && y > 30 && y < H - 50) {
+    const r = 16 + 3 * Math.sin(Date.now() / 180);
+    g.strokeStyle = col; g.lineWidth = 2.5; g.setLineDash([5, 4]); g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke(); g.setLineDash([]);
+    g.fillStyle = col; g.fillText(lab, Math.max(40, Math.min(W - 40, x)), y - r - 6);
+  } else {
+    const dx = x - cx, dy = y - cy, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const kx = ux > 0 ? (X1 - cx) / ux : ux < 0 ? (X0 - cx) / ux : Infinity;
+    const ky = uy > 0 ? (Y1 - cy) / uy : uy < 0 ? (Y0 - cy) / uy : Infinity;
+    const k = Math.max(0, Math.min(kx, ky)), ax = cx + ux * k, ay = cy + uy * k, a = Math.atan2(uy, ux);
+    g.translate(ax, ay); g.rotate(a);
+    g.fillStyle = col; g.beginPath(); g.moveTo(16, 0); g.lineTo(-8, -11); g.lineTo(-3, 0); g.lineTo(-8, 11); g.closePath(); g.fill();
+    g.rotate(-a); g.translate(-ax, -ay);
+    const tw = g.measureText(lab).width, d = 20 + Math.abs(ux) * tw / 2 + Math.abs(uy) * 8;
+    g.fillText(lab, ax - ux * d, ay - uy * d + 4);
+  }
+  g.restore();
+}
+const catchStepV13 = catchStep;
+catchStep = function (g, toXY, off) { catchStepV13(g, toXY, off); cdArrow(g, toXY); };
+// (2) 星座を探す：照準のまわり25°だけ星座の線が見える。2秒とらえると名前と説明が出て「見つけた星座」に記録（点・バッジなし）
+const CON_R = 25, CON_HOLD = 2000, CON_GAP = 500;
+let conFind = lsGet('sora_con_mode', 'find') !== 'all', conHold = null;
+// 今夜（12時間以内）にもう見つけた星座か
+function conFoundAt(id, now) {
+  for (const k of [today(), ymd(new Date(now - 86400000))]) {
+    const D = skyDays.days[k], f = D && (D.con || []).find(x => x.id === id);
+    if (f && now - f.t < 12 * 3600000) return f;
+  }
+  return null;
+}
+const conTonight = now => [today(), ymd(new Date(now - 86400000))].reduce((n, k) => n + ((skyDays.days[k] && skyDays.days[k].con) || []).filter(x => now - x.t < 12 * 3600000).length, 0);
+const conLayerBase = conLayer;
+conLayer = function (g, toXY, dAz, off, W, H, cx, cy, sc) {
+  if (!conFind || !conObjs.length) { conHold = null; return conLayerBase(g, toXY, dAz, off, W, H, cx, cy, sc); }
+  const now = Date.now(), R = CON_R * sc, all = conObjs;
+  // 懐中電灯のような、うっすら明るい輪
+  const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+  gr.addColorStop(0, 'rgba(120,150,255,.12)'); gr.addColorStop(1, 'rgba(120,150,255,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+  // 輪の中だけ描く。まだ見つけていない星座は名前を隠す
+  conObjs = all.map(c => conFoundAt(c.id, now) ? c : Object.assign({}, c, {lab:[0, -90]}));
+  let r = null;
+  g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 7); g.clip();
+  try { r = conLayerBase(g, toXY, dAz, off, W, H, cx, cy, sc); } finally { g.restore(); conObjs = all; }
+  if (!r) { conHold = null; return null; }
+  const c = all.find(x => x.id === r.c.id) || r.c;
+  return {c, hi:() => { if (conFoundAt(c.id, now)) r.hi(); else conHoldStep(g, c, cx, cy, now); }};
+};
+// 照準に星座の線を入れている間、照準のまわりに輪がたまっていく
+function conHoldStep(g, c, cx, cy, now) {
+  if (!conHold || conHold.id !== c.id || now - conHold.lastIn > CON_GAP) conHold = {id:c.id, t0:now, lastIn:now};
+  conHold.lastIn = now;
+  const k = Math.min(1, (now - conHold.t0) / CON_HOLD);
+  g.save(); g.shadowBlur = 0; g.lineWidth = 4;
+  g.strokeStyle = 'rgba(159,197,255,.3)'; g.beginPath(); g.arc(cx, cy, 20, 0, 7); g.stroke();
+  g.strokeStyle = '#9fc5ff'; g.beginPath(); g.arc(cx, cy, 20, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.stroke();
+  g.restore();
+  if (k >= 1) conFound(c, now);
+}
+function conFound(c, now) {
+  conHold = null;
+  if (conFoundAt(c.id, now)) return;
+  const D = dayGet();
+  (D.con = D.con || []).push({id:c.id, name:c.name, t:now});
+  daySave(true);
+  const vis = conObjs.filter(o => o.lab[1] > 0).length;
+  alertMsg(`星座を見つけた！ ${c.name}　今夜${conTonight(now)}つめ（いま見える星座 ${vis}）`, null, false);
+  $('toast').classList.add('con');
+  if ($('day').style.display === 'block') renderDay(dayView || today());
+}
+const conSayBase = conSay;
+conSay = function (c, say) {
+  if (!conFind || conFoundAt(c.id, Date.now())) return conSayBase(c, say);
+  const k = conHold && conHold.id === c.id ? Math.min(1, (Date.now() - conHold.t0) / CON_HOLD) : 0;
+  say('照準：星座の線をとらえました', `照準を動かさずに2秒で、星座の名前がわかります（${Math.round(k * 100)}%）`, '#9fc5ff');
+};
+// 「出し方」ボタン（星座がONのときだけ出す）
+const showConUiBase = showConUi;
+showConUi = function () {
+  showConUiBase();
+  const b = $('conMode');
+  b.style.display = conOn ? '' : 'none';
+  b.textContent = conFind ? '出し方：探す' : '出し方：全部';
+};
+$('conMode').onclick = () => { conFind = !conFind; conHold = null; lsSet('sora_con_mode', conFind ? 'find' : 'all'); showConUi(); };
+// 今日の空に「見つけた星座」
+const renderDayV15 = renderDay;
+renderDay = function (k) {
+  renderDayV15(k);
+  const D = skyDays.days[k], L = (D && D.con) || [];
+  if (!L.length) return;
+  const el = document.createElement('div'); el.className = 'drow';
+  el.innerHTML = `<b>${k === today() ? '今夜' : ''}見つけた星座</b>　${L.length}個<br><span class="small">${esc(L.map(x => hm(x.t) + ' ' + x.name).join('、'))}</span>`;
+  const sp = [...$('dayBody').querySelectorAll('.dhead')].find(x => x.textContent === '見た場所');
+  $('dayBody').insertBefore(el, sp || null);
+};
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

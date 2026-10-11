@@ -76,6 +76,15 @@ label{white-space:nowrap;margin-right:6px}
 #share{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:25;background:#fff;overflow:auto;padding:12px}
 #shareImg{display:block;width:100%;max-width:540px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
 #shareBtn{background:#1f3b73;color:#fff;border:none;border-radius:4px}
+.plab{background:rgba(255,255,255,.92);color:#1f3b73;border:1px solid #1f6fd1;border-radius:8px;padding:0 5px;font-size:11px;font-weight:bold;white-space:nowrap;pointer-events:none}
+.plab.mil{color:#c0392b;border-color:#c0392b}
+.plane.catchable svg{filter:drop-shadow(0 0 3px #2ecc71) drop-shadow(0 0 3px #2ecc71)}
+.zlink{color:#1f6fd1;text-decoration:underline;cursor:pointer}
+.zdet td{background:#f4f8ff}
+.zph img{width:100%;max-width:420px;border-radius:6px;display:block;margin-top:4px}
+#flash{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:40;background:#fff;pointer-events:none}
+#flash.on{display:block;animation:flash3 1.2s steps(1,end) 1 forwards}
+@keyframes flash3{0%{opacity:.85}17%{opacity:0}33%{opacity:.85}50%{opacity:0}67%{opacity:.85}83%{opacity:0}100%{opacity:0}}
 #badge{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
 .bcard{border:1px solid #ddd;border-left:6px solid #bbb;border-radius:6px;padding:6px 8px;margin:6px 0;line-height:1.7;color:#888}
 .bcard.got{border-left-color:#d4a017;color:#222}
@@ -93,7 +102,7 @@ label{white-space:nowrap;margin-right:6px}
   <div id="rideMarks"></div>
 </div>
 <div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas><button id="skyBack">× 戻る</button></div>
-<div id="toast"></div>
+<div id="toast"></div><div id="flash"></div>
 <div id="zukan">
   <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button><button id="catchReset" class="reset">キャッチを消す</button>
   <table><thead><tr><th>機種</th><th>回数</th><th>捕</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
@@ -111,6 +120,7 @@ label{white-space:nowrap;margin-right:6px}
   <div style="margin:8px 0"><label><input type="checkbox" id="sharePlace">市区町村名を入れる</label></div>
   <img id="shareImg" alt="シェアカード">
   <div style="margin-top:8px"><button id="shareSend" class="rideBtn">共有する（LINE・Xなど）</button><button id="shareDl">画像を保存する</button></div>
+  <div id="sharePhoto" class="small" style="margin-top:6px"></div>
   <div id="shareMsg" class="small"></div>
   <div class="small" style="margin-top:6px">正確な位置や住所は入りません。画像はスマホの中で作り、外へは送りません。</div>
 </div>
@@ -136,6 +146,7 @@ label{white-space:nowrap;margin-right:6px}
     <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button><button id="citiesBtn">都市</button><button id="dayBtn">今日の空</button><button id="badgeBtn">バッジ</button>
     <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
     <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
+    <label><input type="checkbox" id="ntfFlash" checked>画面を光らせる</label>
   </div>
   <div id="skyCtl" style="display:none">
   <button id="camBtn">カメラ</button><button id="conBtn">星座</button>
@@ -154,9 +165,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=16"></script>
-<script src="data.js?v=16"></script>
-<script src="constellations.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="config.js?v=17"></script>
+<script src="data.js?v=17"></script>
+<script src="constellations.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>見上げ</title>
+<title>SoraMiru</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
@@ -72,6 +72,7 @@ label{white-space:nowrap;margin-right:6px}
 #dayList tr{cursor:pointer}
 #dayList tr.dsel{background:#eef3fb}
 #toast.catch{background:#1e8e5a}
+#skyBack{position:absolute;top:30px;right:8px;z-index:3;margin:0;padding:8px 14px;font-size:16px;font-weight:bold;color:#fff;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.7);border-radius:20px}
 </style>
 </head>
 <body>
@@ -82,7 +83,7 @@ label{white-space:nowrap;margin-right:6px}
   <div id="rideBtns"><button data-v="left">左窓</button><button data-v="front">前方</button><button data-v="right">右窓</button><button id="rideExit">降りる</button></div>
   <div id="rideMarks"></div>
 </div>
-<div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas></div>
+<div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas><button id="skyBack">× 戻る</button></div>
 <div id="toast"></div>
 <div id="zukan">
   <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button><button id="catchReset" class="reset">キャッチを消す</button>
@@ -131,9 +132,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=13"></script>
-<script src="data.js?v=13"></script>
-<script src="constellations.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="config.js?v=14"></script>
+<script src="data.js?v=14"></script>
+<script src="constellations.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

@@ -1334,6 +1334,123 @@ function catchDayHtml(D) {
   return `${D.catN}機<br><span class="small">${list}</span>`;
 }
 
+// ---------- レア度とスコア（v13） ----------
+// 点はキャッチしたときだけ。レア度は「自分の図鑑でその機種を何回見たか」で決める
+const RARITY = [ // [図鑑で見た回数の上限, 名前, 点, 色]
+  [2, '激レア', 80, '#ff6bd6'], [10, 'レア', 40, '#ffb347'], [30, 'ちょいレア', 20, '#9fd3ff'], [Infinity, 'ふつう', 10, '#cccccc']];
+const LV_AT = [1, 3, 10, 30, 100], ISS_PT = 100;
+function rarityOf(code) {
+  if (!code || code === '?') return RARITY[3];
+  const n = (zukan.types[code] && zukan.types[code].n) || 0;
+  return RARITY.find(r => n <= r[0]);
+}
+const lvOf = n => LV_AT.filter(v => n >= v).length;
+function addScore(pt, now) {
+  const D = dayGet();
+  D.score = (D.score || 0) + pt;
+  const b = catchData.best;
+  if (!b || D.score > b.pt) catchData.best = {pt:D.score, d:today()};
+  lsSet('sora_catch_v1', catchData); daySave(true);
+  return D.score;
+}
+// キャッチに点を付ける（v12 の doCatch を包み直す）
+const doCatchBase = doCatch;
+doCatch = function (p, now) {
+  const code = p.type || '?', firstType = code !== '?' && !catchData.types[code], rar = rarityOf(code);
+  doCatchBase(p, now);
+  const e = catchData.types[code], lv = lvOf(e.n), lvUp = e.n > 1 && LV_AT.includes(e.n);
+  const parts = [], add = (t, v) => { parts.push(`${t}+${v}`); return v; };
+  let pt = rar[2];
+  if (p.mil) pt += add('軍用機', 50);
+  if (firstType) pt += add('初めての機種', 50);
+  if (p.sun) pt += add(p.sun.kind, 30);
+  if (p.elev >= 70) pt += add('真上', 20);
+  if (lvUp) pt += add(`Lv${lv}`, 30);
+  if (catchData.log[0]) { catchData.log[0].pt = pt; catchData.log[0].rar = rar[1]; }
+  const D = dayGet(); if (D.cat && D.cat.length) { const c = D.cat[D.cat.length - 1]; c.pt = pt; c.rar = rar[1]; }
+  const total = addScore(pt, now);
+  const ri = routeInfo(p), who = [typeName(p), p.cs || p.reg].filter(Boolean).join(' ') + (ri ? ' ' + ri.text : '');
+  alertMsg(`${p.mil ? '軍用機を' : ''}キャッチ！ ${rar[1]} ${who}　+${pt}点${parts.length ? '（' + parts.join('・') + '）' : ''}` +
+    (lvUp ? `　${typeName(p)}がLv${lv}になりました` : '') + `　今日 ${total}点`, p.hex, true);
+  $('toast').classList.add('catch');
+};
+// 宇宙ステーションのキャッチ（肉眼で見えるときだけ、1日1回、100点）
+let issCT = null;
+function issCatchStep(g, toXY, off) {
+  const now = Date.now();
+  if (!issNow || caughtToday('ISS') || elevNow < CATCH_MIN_AIM || issNow.el < CATCH_MIN_ELEV || !issVisible(issNow, new Date(now))) { issCT = null; return; }
+  const inR = angSep(head, elevNow, issNow.az, issNow.el) <= CATCH_R;
+  if (inR) { if (!issCT) issCT = {t0:now, lastIn:now}; issCT.lastIn = now; }
+  else if (issCT && now - issCT.lastIn > CATCH_GAP) issCT = null;
+  if (!issCT) return;
+  const k = Math.min(1, (now - issCT.t0) / CATCH_MS), [x, y] = toXY(issNow.az, issNow.el);
+  if (!off(x, y)) {
+    g.strokeStyle = 'rgba(76,255,154,.35)'; g.lineWidth = 5; g.beginPath(); g.arc(x, y, 22, 0, 7); g.stroke();
+    g.strokeStyle = '#4cff9a'; g.beginPath(); g.arc(x, y, 22, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.stroke();
+  }
+  if (k < 1 || !inR) return;
+  issCT = null;
+  catchData.seen['ISS|' + today()] = 1;
+  catchData.iss = {n:((catchData.iss && catchData.iss.n) || 0) + 1, last:today()};
+  catchData.total = (catchData.total || 0) + 1;
+  catchData.log.unshift({t:now, hex:'ISS', cs:'ISS', ty:'ISS', mil:0, route:'', km:Math.round(issNow.range), elev:Math.round(issNow.el), pt:ISS_PT, rar:'宇宙'});
+  catchData.log.splice(CATCH_LOG);
+  const D = dayGet();
+  D.catN = (D.catN || 0) + 1;
+  (D.cat = D.cat || []).push({t:now, cs:'ISS', ty:'ISS', route:'', mil:0, pt:ISS_PT, rar:'宇宙'});
+  const total = addScore(ISS_PT, now);
+  alertMsg(`宇宙ステーションをキャッチ！ 高度${Math.round(issNow.alt)}km・${Math.round(issNow.range)}km先　+${ISS_PT}点　今日 ${total}点`, null, true);
+  $('toast').classList.add('catch');
+  try { if (navigator.vibrate) navigator.vibrate([80, 60, 80, 60, 80, 60, 300]); } catch (er) {}
+}
+// スコープ：まだ捕まえていない機体にレア度の印、宇宙ステーションのキャッチ
+const catchStepBase = catchStep;
+catchStep = function (g, toXY, off) {
+  planes.forEach(p => {
+    if (p.ground || p.elev < CATCH_MIN_ELEV || caughtToday(p.hex)) return;
+    const r = rarityOf(p.type);
+    if (r[2] < 40) return; // レア以上だけ印を付ける
+    const [x, y] = toXY(p.dir, p.elev);
+    if (off(x, y)) return;
+    g.font = 'bold 11px sans-serif'; g.fillStyle = r[3]; g.fillText(r[1], x + 9, y + 18);
+  });
+  catchStepBase(g, toXY, off);
+  issCatchStep(g, toXY, off);
+};
+// 図鑑：「捕」にレベル、上に自己ベスト
+const renderZukanV12 = renderZukan;
+renderZukan = function () {
+  renderZukanV12();
+  const ks = Object.keys(zukan.types).sort((a, b) => zukan.types[b].n - zukan.types[a].n);
+  const rows = $('zukanBody').querySelectorAll('tr');
+  if (ks.length && rows.length === ks.length) rows.forEach((tr, i) => {
+    const c = catchData.types[ks[i]], td = tr.children[2];
+    if (c && td) td.innerHTML = `${c.n} <span style="font-size:11px">Lv${lvOf(c.n)}</span>`;
+  });
+  const b = catchData.best, iss = catchData.iss;
+  $('zukanSum').textContent += (iss ? `　宇宙ステーション${iss.n}回` : '') + (b ? `　自己ベスト ${b.pt}点（${b.d.slice(5).replace('-', '/')}）` : '');
+};
+// 今日の空：スコアの行と、キャッチ一覧に点
+catchDayHtml = function (D) {
+  const b = catchData.best;
+  const head = `<b>今日のスコア ${(D && D.score) || 0}点</b>` + (b ? `<span class="small">（自己ベスト ${b.pt}点・${b.d.slice(5).replace('-', '/')}）</span>` : '');
+  if (!D || !D.catN) return head + '<br><span class="small">空に向けて、照準の円に機体を2秒入れるとキャッチ。珍しい機種ほど高い点です</span>';
+  const list = D.cat.slice(-10).reverse().map(c => `${hm(c.t)} ${c.mil ? '<b style="color:#c0392b">軍</b> ' : ''}` +
+    (c.ty === 'ISS' ? '宇宙ステーション' : `${esc(c.cs || '')} ${esc(tyName(c.ty))}${c.route ? '　' + esc(c.route) : ''}`) +
+    (c.pt ? `　<b>${c.rar && c.rar !== '宇宙' ? esc(c.rar) + ' ' : ''}+${c.pt}</b>` : '')).join('<br>');
+  return `${head}<br>キャッチ ${D.catN}機<br><span class="small">${list}</span>`;
+};
+// これまでの日の一覧に「点」の列
+const renderDayV12 = renderDay;
+renderDay = function (k) {
+  renderDayV12(k);
+  $('dayList').querySelectorAll('tr[data-k]').forEach(tr => {
+    const E = skyDays.days[tr.dataset.k], td = document.createElement('td');
+    td.textContent = E && E.score ? E.score + '点' : '';
+    tr.appendChild(td);
+  });
+};
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 星座と月の形（v10） ----------
 // 星座の線は constellations.js（CONSTEL）。空が暗いとき（太陽が地平線の下6°以下）だけ出す

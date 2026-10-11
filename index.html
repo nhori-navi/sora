@@ -71,6 +71,7 @@ label{white-space:nowrap;margin-right:6px}
 .dspot{padding:6px 8px;margin:6px 0;border:1px solid #ddd;border-left:6px solid #1f6fd1;border-radius:6px;line-height:1.5}
 #dayList tr{cursor:pointer}
 #dayList tr.dsel{background:#eef3fb}
+#toast.catch{background:#1e8e5a}
 </style>
 </head>
 <body>
@@ -84,9 +85,9 @@ label{white-space:nowrap;margin-right:6px}
 <div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas></div>
 <div id="toast"></div>
 <div id="zukan">
-  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button>
-  <table><thead><tr><th>機種</th><th>回数</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
-  <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。</div>
+  <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button><button id="catchReset" class="reset">キャッチを消す</button>
+  <table><thead><tr><th>機種</th><th>回数</th><th>捕</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
+  <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。「捕」は空に向けてキャッチした回数です。</div>
 </div>
 <div id="cities">
   <button id="citiesClose">閉じる</button> <b>この空から行った都市</b><button id="citiesReset" class="reset">記録を消す</button>
@@ -130,9 +131,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=11"></script>
-<script src="data.js?v=11"></script>
-<script src="constellations.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="config.js?v=12"></script>
+<script src="data.js?v=12"></script>
+<script src="constellations.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

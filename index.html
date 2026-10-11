@@ -90,7 +90,15 @@ label{white-space:nowrap;margin-right:6px}
 .bcard.got{border-left-color:#d4a017;color:#222}
 .bt{display:inline-block;font-size:12px;padding:0 6px;margin:0 4px 0 0;border-radius:10px;background:#eee;color:#999}
 .bt.on{background:#f3d36b;color:#5a4300;font-weight:bold}
-#skyBack{position:absolute;top:30px;right:8px;z-index:3;margin:0;padding:8px 14px;font-size:16px;font-weight:bold;color:#fff;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.7);border-radius:20px}
+
+#cdBar{display:none;position:absolute;top:8px;left:8px;z-index:5;max-width:min(520px,calc(100% - 16px));padding:6px 10px;border-radius:8px;background:rgba(31,59,115,.9);color:#fff;font-size:12px;line-height:1.4;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+#cdBar b{font-size:16px}
+#cdBar.soon{background:rgba(214,110,20,.95)}
+#cdBar.now{background:rgba(192,57,43,.95)}
+body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
+#toast.con{background:#1f3b73}
+  
+  #skyBack{position:absolute;top:30px;right:8px;z-index:3;margin:0;padding:8px 14px;font-size:16px;font-weight:bold;color:#fff;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.7);border-radius:20px}
 </style>
 </head>
 <body>
@@ -102,7 +110,7 @@ label{white-space:nowrap;margin-right:6px}
   <div id="rideMarks"></div>
 </div>
 <div id="scopeBox"><video id="cam" playsinline muted autoplay></video><canvas id="scope"></canvas><button id="skyBack">× 戻る</button></div>
-<div id="toast"></div><div id="flash"></div>
+<div id="toast"></div><div id="flash"></div><div id="cdBar"></div>
 <div id="zukan">
   <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button><button id="catchReset" class="reset">キャッチを消す</button>
   <table><thead><tr><th>機種</th><th>回数</th><th>捕</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
@@ -146,10 +154,10 @@ label{white-space:nowrap;margin-right:6px}
     <button id="skyBtn">空に向ける</button><button id="zukanBtn">図鑑</button><button id="citiesBtn">都市</button><button id="dayBtn">今日の空</button><button id="badgeBtn">バッジ</button>
     <label><input type="checkbox" id="ntfMil" checked>軍用機を知らせる</label>
     <label><input type="checkbox" id="ntfOver" checked>真上通過を知らせる</label>
-    <label><input type="checkbox" id="ntfFlash" checked>画面を光らせる</label>
+    <label><input type="checkbox" id="ntfCd" checked>真上カウントダウン</label><input type="checkbox" id="ntfFlash" hidden>
   </div>
   <div id="skyCtl" style="display:none">
-  <button id="camBtn">カメラ</button><button id="conBtn">星座</button>
+  <button id="camBtn">カメラ</button><button id="conBtn">星座</button><button id="conMode">出し方：探す</button>
     補正 <button id="offMinus">−5°</button><span id="offVal">0°</span><button id="offPlus">＋5°</button>
     <span id="fovCtl" style="display:none">画角 <button id="fovMinus">狭く</button><button id="fovPlus">広く</button> <button id="calBtn">方角を合わせる</button></span><br>
     <span id="skyInfo" class="small">スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細</span><br>
@@ -165,9 +173,9 @@ label{white-space:nowrap;margin-right:6px}
   <div class="small">機体データ：adsb.lol（中継経由）　行き先：adsbdb　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=17"></script>
-<script src="data.js?v=17"></script>
-<script src="constellations.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="config.js?v=18"></script>
+<script src="data.js?v=18"></script>
+<script src="constellations.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

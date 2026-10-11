@@ -1703,6 +1703,125 @@ $('shareSend').onclick = async () => {
 };
 $('shareDl').onclick = () => { if (shareBlob) shareSave(); };
 
+// ---------- 写真リンク・10kmリング・図鑑の説明・画面の点滅（v17） ----------
+// (1) キャッチした機体の写真ページ（Planespotters）を記録し、シェアの文章に付ける。写真そのものは画像に入れない
+async function catchPhotoLink(hex, t) {
+  try {
+    if (!photos.has(hex) || photos.get(hex) === 'loading') await loadPhoto(hex);
+    let ph = photos.get(hex);
+    for (let i = 0; ph === 'loading' && i < 20; i++) { await new Promise(r => setTimeout(r, 300)); ph = photos.get(hex); }
+    if (!ph || ph === 'loading') return;
+    const L = catchData.log.find(r => r.t === t); if (L) { L.ph = ph.link; L.by = ph.by; lsSet('sora_catch_v1', catchData); }
+    const D = dayGet(), c = (D.cat || []).find(x => x.t === t); if (c) { c.ph = ph.link; c.by = ph.by; daySave(true); }
+  } catch (e) {}
+}
+const doCatchV15 = doCatch;
+doCatch = function (p, now) { doCatchV15(p, now); catchPhotoLink(p.hex, now); };
+function shareBest() { const D = skyDays.days[dayView || today()]; return D && (D.cat || []).filter(x => x.pt).sort((a, b) => b.pt - a.pt)[0]; }
+const renderShareV16 = renderShare;
+renderShare = function () {
+  renderShareV16();
+  const b = shareBest();
+  $('sharePhoto').innerHTML = b && b.ph ? `いちばんの一機の写真：<a href="${esc(b.ph)}" target="_blank" rel="noopener">${esc(b.ty === 'ISS' ? '' : tyName(b.ty) + ' ' + (b.cs || ''))}</a>（Photo © ${esc(b.by || '')} / Planespotters.net）。共有の文章にこのリンクが付きます` : '';
+};
+$('shareSend').onclick = async () => {
+  if (!shareBlob) return;
+  const f = shareFile(), b = shareBest(), k = dayView || today(), D = skyDays.days[k] || {};
+  let text = `SoraMiru ${dateLabel(k)}の空　${D.score || 0}点`;
+  if (b) text += `\nいちばんの一機：${b.ty === 'ISS' ? '国際宇宙ステーション' : tyName(b.ty) + (b.cs ? ' ' + b.cs : '')}`;
+  if (b && b.ph) text += `\n写真：${b.ph}（Photo © ${b.by || ''} / Planespotters.net）`;
+  if (navigator.canShare && navigator.canShare({files:[f]})) {
+    try { await navigator.share({files:[f], title:'SoraMiru', text}); }
+    catch (e) { if (e.name !== 'AbortError') $('shareMsg').textContent = '共有できませんでした：' + e.message; }
+  } else { shareSave(); $('shareMsg').textContent = 'この端末では共有画面が使えないので、画像を保存しました'; }
+};
+// (2) 地図に10kmのリング（行き先が記録される範囲）と、10km以内の機体の行き先・機種、キャッチできる機体の緑の光
+function ring10Setup() {
+  if (map.getSource('ring10')) return;
+  const empty = {type:'FeatureCollection', features:[]};
+  map.addSource('ring10', {type:'geojson', data:empty});
+  map.addLayer({id:'ring10', type:'line', source:'ring10', filter:['==', ['geometry-type'], 'Polygon'],
+    paint:{'line-color':'#e67e22', 'line-width':1.5, 'line-dasharray':[1, 2], 'line-opacity':0.8}});
+  map.addLayer({id:'ring10lab', type:'symbol', source:'ring10', filter:['==', ['geometry-type'], 'Point'],
+    layout:{'text-field':'10km（行き先を記録する範囲）', 'text-size':11, 'text-anchor':'bottom', 'text-offset':[0, -0.2]},
+    paint:{'text-color':'#c0612b', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
+  drawRing10();
+}
+function drawRing10() {
+  const s = map.getSource && map.getSource('ring10');
+  if (!s || !pos) return;
+  s.setData({type:'FeatureCollection', features:[circle(pos, 10), {type:'Feature', properties:{}, geometry:{type:'Point', coordinates:[pos[0], pos[1] + 10 / 110.57]}}]});
+}
+if (map.isStyleLoaded && map.isStyleLoaded()) ring10Setup(); else map.on('load', ring10Setup);
+const drawRangeBase = drawRange;
+drawRange = function () { drawRangeBase(); drawRing10(); };
+const labMarkers = new Map();
+const renderV13 = render;
+render = function () {
+  renderV13();
+  const keep = new Set();
+  planes.forEach(p => {
+    const m = markers.get(p.hex);
+    if (m) m.getElement().classList.toggle('catchable', !p.ground && p.elev >= CATCH_MIN_ELEV && !caughtToday(p.hex));
+    if (p.ground || p.dist > 10) return;
+    keep.add(p.hex);
+    const ri = routeInfo(p), txt = [ri ? ri.destName + '行き' : (p.mil ? '軍用機' : ''), p.type || ''].filter(Boolean).join(' ');
+    let L = labMarkers.get(p.hex);
+    if (!L) {
+      const el = document.createElement('div'); el.className = 'plab';
+      L = new mapboxgl.Marker({element:el, anchor:'top', offset:[0, 14]}).setLngLat(p.p).addTo(map);
+      labMarkers.set(p.hex, L);
+    }
+    L.getElement().textContent = txt || p.cs || p.reg || '';
+    L.getElement().classList.toggle('mil', !!p.mil);
+    L.setLngLat(p.p);
+  });
+  labMarkers.forEach((L, hex) => { if (!keep.has(hex)) { L.remove(); labMarkers.delete(hex); } });
+};
+setInterval(() => { if (document.hidden) return; labMarkers.forEach((L, hex) => { const p = planes.find(x => x.hex === hex); if (p && p.p) L.setLngLat(p.p); }); }, 500);
+// (3) 図鑑：機種名を押すと、説明（Wikipedia）と、自分がキャッチした機体の実際の写真
+const renderZukanV13 = renderZukan;
+renderZukan = function () {
+  renderZukanV13();
+  const ks = Object.keys(zukan.types).sort((a, b) => zukan.types[b].n - zukan.types[a].n);
+  const rows = [...$('zukanBody').querySelectorAll('tr')];
+  if (!ks.length || rows.length !== ks.length) return;
+  rows.forEach((tr, i) => {
+    const code = ks[i], td = tr.children[0];
+    if (code === '?' || !td) return;
+    td.classList.add('zlink');
+    td.onclick = () => zukanDetail(tr, code);
+  });
+};
+function zukanDetail(tr, code) {
+  const nx = tr.nextElementSibling;
+  if (nx && nx.classList.contains('zdet')) { nx.remove(); return; }
+  const name = TYPE[code] || code, det = document.createElement('tr'); det.className = 'zdet';
+  const wiki = 'https://ja.wikipedia.org/w/index.php?search=' + encodeURIComponent(name);
+  const mine = catchData.log.find(r => r.ty === code && r.hex && r.hex !== 'ISS');
+  det.innerHTML = `<td colspan="${tr.children.length}"><a href="${wiki}" target="_blank" rel="noopener">${esc(name)}の説明（Wikipedia）</a>` +
+    `<div class="zph">${mine ? '写真を探しています…' : 'この機種をキャッチすると、自分が捕まえた機体の写真がここに出ます'}</div></td>`;
+  tr.after(det);
+  if (!mine) return;
+  const show = () => {
+    const ph = photos.get(mine.hex), box = det.querySelector('.zph');
+    if (ph === 'loading' || ph === undefined) return false;
+    box.innerHTML = ph ? `<div class="small">あなたが ${esc(mine.t ? new Date(mine.t).toLocaleDateString('ja-JP') : '')} にキャッチした ${esc(mine.cs || mine.reg || '')}</div>` +
+      `<a href="${esc(ph.link)}" target="_blank" rel="noopener"><img src="${esc(ph.src)}" alt="機体の写真"></a><div class="small">Photo © ${esc(ph.by)}（Planespotters.net）</div>`
+      : 'この機体の写真は見つかりませんでした';
+    return true;
+  };
+  if (!show()) { loadPhoto(mine.hex).then(() => { let n = 0; const iv = setInterval(() => { if (show() || ++n > 20) clearInterval(iv); }, 300); }); }
+}
+// (4) 画面を光らせる知らせ（振動しない設定でも気づけるように。強い知らせのときだけ）
+const alertMsgV15 = alertMsg;
+alertMsg = function (text, hex, strong) {
+  alertMsgV15(text, hex, strong);
+  if (!strong || !$('ntfFlash').checked) return;
+  const f = $('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+};
+{ const el = $('ntfFlash'), v = lsGet('sora_ntfFlash', null); if (v != null) el.checked = !!v; el.addEventListener('change', () => lsSet('sora_ntfFlash', el.checked)); }
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

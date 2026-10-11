@@ -1588,6 +1588,121 @@ renderDay = function (k) {
 badgeCheck(badgeFirst);
 setInterval(() => { if (!document.hidden) badgeCheck(false); }, 15000);
 
+// ---------- シェアカード（v16） ----------
+// 今日の空のまとめを1枚の画像（1080×1350）にして、スマホの共有画面で送る。画像はスマホの中だけで作る
+let sharePlace = lsGet('sora_share_place', false) === true, shareBlob = null;
+const SKY_BG = { // 時間帯ごとの背景（上の色, 下の色）
+  dawn:['#f2a57c', '#5d7fbf'], day:['#3f86d6', '#bfe2ff'], dusk:['#ff8a50', '#3a2a6b'], night:['#0b1430', '#22346b']};
+function skyKind(t) {
+  const h = new Date(t).getHours();
+  return h >= 5 && h < 8 ? 'dawn' : h >= 8 && h < 16 ? 'day' : h >= 16 && h < 19 ? 'dusk' : 'night';
+}
+function rrect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function fitText(g, s, max) { while (s.length > 1 && g.measureText(s).width > max) s = s.slice(0, -2) + '…'; return s; }
+function drawShareCard(k) {
+  const D = skyDays.days[k] || {n:0, ty:{}}, isToday = k === today();
+  const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), F = 'sans-serif', home = pos || DEF;
+  const last = D.cat && D.cat.length ? D.cat[D.cat.length - 1].t : null;
+  const bg = SKY_BG[skyKind(isToday ? Date.now() : (last || new Date(k + 'T12:00:00').getTime()))];
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, bg[0]); gr.addColorStop(1, bg[1]);
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 8; g.textBaseline = 'alphabetic';
+  // 見出し
+  g.font = `bold 64px ${F}`; g.textAlign = 'left'; g.fillText('SoraMiru', 60, 110);
+  const [y, m, d] = k.split('-').map(Number);
+  g.font = `40px ${F}`; g.textAlign = 'right'; g.fillText(`${y}年${dateLabel(k)}`, W - 60, 105);
+  const places = [...new Set((D.sp || []).filter(s => s.name && !s.u && s.name !== '地名なし').map(s => s.name))];
+  if (sharePlace && places.length) { g.font = `34px ${F}`; g.fillText(places.slice(0, 3).join('・') + 'の空', W - 60, 155); }
+  // スコア
+  g.textAlign = 'center'; g.font = `40px ${F}`; g.fillText(isToday ? '今日のスコア' : 'この日のスコア', W / 2, 250);
+  const sc = String(D.score || 0);
+  g.font = `bold 150px ${F}`; const sw = g.measureText(sc).width; g.fillText(sc, W / 2 - 30, 400);
+  g.font = `bold 60px ${F}`; g.textAlign = 'left'; g.fillText('点', W / 2 - 30 + sw / 2 + 10, 400);
+  // 数字3つ
+  const types = Object.keys(D.ty || {}).filter(t => t !== '?').length;
+  [['キャッチ', `${D.catN || 0}`, '機'], ['見た機体', `${D.n || 0}`, '機'], ['機種', `${types}`, '']].forEach((s, i) => {
+    const x = 60 + i * 330, bw = 300;
+    g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,.18)'; rrect(g, x, 450, bw, 140, 24); g.fill();
+    g.fillStyle = '#fff'; g.shadowBlur = 6; g.textAlign = 'center';
+    g.font = `32px ${F}`; g.fillText(s[0], x + bw / 2, 500);
+    g.font = `bold 64px ${F}`; g.fillText(s[1] + s[2], x + bw / 2, 570);
+  });
+  // いちばんの一機
+  const best = (D.cat || []).filter(x => x.pt).sort((a, b) => b.pt - a.pt)[0];
+  g.shadowBlur = 0; g.fillStyle = 'rgba(0,0,0,.22)'; rrect(g, 60, 620, W - 120, 170, 24); g.fill();
+  g.fillStyle = '#fff'; g.shadowBlur = 6; g.textAlign = 'left';
+  g.font = `30px ${F}`; g.fillText(isToday ? '今日のいちばんの一機' : 'この日のいちばんの一機', 90, 668);
+  if (best) {
+    const nm = best.ty === 'ISS' ? '国際宇宙ステーション' : tyName(best.ty) + (best.mil ? '（軍用機）' : '');
+    g.font = `bold 46px ${F}`; g.fillText(fitText(g, `${best.rar && best.rar !== '宇宙' ? best.rar + ' ' : ''}${nm}`, W - 360), 90, 728);
+    g.font = `30px ${F}`; g.fillText(fitText(g, [best.ty === 'ISS' ? '' : best.cs, best.route].filter(Boolean).join('　'), W - 360), 90, 772);
+    g.font = `bold 60px ${F}`; g.textAlign = 'right'; g.fillText(`+${best.pt}`, W - 90, 745);
+  } else { g.font = `36px ${F}`; g.fillText('まだキャッチがありません', 90, 735); }
+  // この空から行った方向（中心＝ここ、向き＝実際の方角、長さ＝距離の対数）
+  const cx = W / 2, cy = 1005, R = 160, maxKm = 12000;
+  const rOf = km => R * Math.log10(1 + km / 100) / Math.log10(1 + maxKm / 100);
+  g.shadowBlur = 0; g.textAlign = 'left'; g.font = `30px ${F}`; g.fillStyle = '#fff'; g.fillText('この空から行った方向', 60, 845);
+  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2;
+  [1000, 3000, 10000].forEach(km => { g.beginPath(); g.arc(cx, cy, rOf(km), 0, 7); g.stroke(); });
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `22px ${F}`; g.textAlign = 'left';
+  [1000, 3000, 10000].forEach(km => g.fillText(km.toLocaleString() + 'km', cx + rOf(km) * 0.71 + 4, cy + rOf(km) * 0.71 + 8));
+  g.font = `bold 28px ${F}`; g.textAlign = 'center'; g.fillStyle = '#fff';
+  [['北', 0], ['東', 90], ['南', 180], ['西', 270]].forEach(([s, a]) => { const r = R + 28; g.fillText(s, cx + r * Math.sin(a * D2R), cy - r * Math.cos(a * D2R) + 10); });
+  const dests = Object.entries(D.ct || {}).map(([id, v]) => { const cc = cities.list[id]; return cc && {name:v.name, km:v.km, az:gcBrg(home, [cc.lon, cc.lat])}; })
+    .filter(Boolean).sort((a, b) => b.km - a.km);
+  if (!dests.length) { g.font = `28px ${F}`; g.fillText('この日の行き先の記録はありません', cx, cy + R + 80); }
+  dests.forEach((p, i) => {
+    const r = rOf(p.km), x = cx + r * Math.sin(p.az * D2R), y2 = cy - r * Math.cos(p.az * D2R);
+    g.strokeStyle = i === 0 ? '#ffd54f' : 'rgba(255,255,255,.85)'; g.lineWidth = i === 0 ? 5 : 3;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(x, y2); g.stroke();
+    g.fillStyle = i === 0 ? '#ffd54f' : '#fff'; g.beginPath(); g.arc(x, y2, i === 0 ? 9 : 6, 0, 7); g.fill();
+    if (i < 8) {
+      g.font = `${i === 0 ? 'bold ' : ''}26px ${F}`; g.shadowBlur = 6;
+      g.textAlign = Math.sin(p.az * D2R) >= 0 ? 'left' : 'right';
+      g.fillText(p.name, x + (Math.sin(p.az * D2R) >= 0 ? 14 : -14), y2 + 9); g.shadowBlur = 0;
+    }
+  });
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(cx, cy, 10, 0, 7); g.fill();
+  g.font = `bold 26px ${F}`; g.textAlign = 'center'; g.shadowBlur = 6; g.fillText('ここ', cx, cy + 40);
+  // いちばん遠い行き先・バッジ・宇宙ステーション
+  const notes = [];
+  if (dests.length) notes.push(`いちばん遠い行き先：${dests[0].name}（${dests[0].km.toLocaleString()}km）`);
+  const bl = []; if (typeof BADGES !== 'undefined') BADGES.forEach(b => { const gg = badge.got[b[0]]; if (gg) gg.d.forEach((dd, i) => { if (dd === k) bl.push(b[2] + (tierName(b, i) ? `（${tierName(b, i)}）` : '')); }); });
+  if (bl.length) notes.push('もらったバッジ：' + bl.slice(0, 3).join('、') + (bl.length > 3 ? ` ほか${bl.length - 3}` : ''));
+  if (D.iss) notes.push(`宇宙ステーションを見た：${hm(D.iss)}`);
+  g.textAlign = 'left'; g.font = `26px ${F}`; g.fillStyle = '#fff';
+  notes.slice(0, 3).forEach((s, i) => g.fillText(fitText(g, s, W - 120), 60, 1304 - (Math.min(3, notes.length) - 1 - i) * 36));
+  g.shadowBlur = 0; g.font = `20px ${F}`; g.fillStyle = 'rgba(255,255,255,.75)'; g.textAlign = 'right';
+  g.fillText('機体データ：adsb.lol　行き先：adsbdb', W - 60, H - 14);
+  return c;
+}
+function renderShare() {
+  const c = drawShareCard(dayView || today());
+  $('shareImg').src = c.toDataURL('image/png');
+  shareBlob = null; c.toBlob(b => { shareBlob = b; }, 'image/png');
+  $('sharePlace').checked = sharePlace;
+}
+const shareOpen = () => $('share').style.display === 'block';
+const shareCloseBase = () => { $('share').style.display = 'none'; };
+$('shareBtn').onclick = () => { if (shareOpen()) return; renderShare(); $('share').style.display = 'block'; navPush('share', shareOpen, shareCloseBase); };
+$('shareClose').onclick = () => navClose('share', shareCloseBase);
+$('sharePlace').onchange = () => { sharePlace = $('sharePlace').checked; lsSet('sora_share_place', sharePlace); renderShare(); };
+function shareFile() { return new File([shareBlob], `soramiru-${dayView || today()}.png`, {type:'image/png'}); }
+function shareSave() {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(shareBlob); a.download = `soramiru-${dayView || today()}.png`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('shareSend').onclick = async () => {
+  if (!shareBlob) return;
+  const f = shareFile();
+  if (navigator.canShare && navigator.canShare({files:[f]})) {
+    try { await navigator.share({files:[f], title:'SoraMiru', text:'SoraMiru ' + dateLabel(dayView || today()) + 'の空'}); }
+    catch (e) { if (e.name !== 'AbortError') $('shareMsg').textContent = '共有できませんでした：' + e.message; }
+  } else { shareSave(); $('shareMsg').textContent = 'この端末では共有画面が使えないので、画像を保存しました'; }
+};
+$('shareDl').onclick = () => { if (shareBlob) shareSave(); };
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

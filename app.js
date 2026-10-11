@@ -522,6 +522,7 @@ function drawScope() {
   const consider = (t, o, ang, lim) => { if (ang < lim && (!aim || ang < aim.ang)) aim = {t, o, ang}; };
   const off = (x, y) => x < -60 || x > W + 60 || y < -20 || y > H + 20;
   g.textAlign = 'left';
+  const conAim = conLayer(g, toXY, dAz, off, W, H, cx, cy, sc);
   // 月・惑星・明るい星
   skyObjs.forEach(s => {
     if (s.el < -3) return;
@@ -530,7 +531,7 @@ function drawScope() {
     if (off(x, y)) return;
     const r = s.kind === 'moon' ? 10 : Math.max(1.6, 4.2 - s.mag * 0.9);
     g.fillStyle = s.kind === 'moon' ? '#fff6d0' : s.kind === 'planet' ? '#ffd98a' : '#dfe8ff';
-    g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    if (s.kind === 'moon' && s.frac != null) drawMoon(g, x, y, 11, s.frac, s.limb); else { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
     g.fillStyle = s.kind === 'star' ? '#9fb3d9' : '#ffe9b0'; g.font = (s.kind === 'star' ? '' : 'bold ') + '12px sans-serif';
     g.fillText(s.name, x + r + 4, y + 4);
   });
@@ -560,6 +561,7 @@ function drawScope() {
     const o = aim.o, [x, y] = aim.t === 'plane' ? toXY(o.dir, o.elev) : toXY(o.az, o.el);
     g.strokeStyle = '#ffd54f'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.stroke();
   }
+  if (!aim && conAim) conAim.hi();
   // 文字
   g.shadowBlur = 0;
   g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, 24); g.fillRect(0, H - 46, W, 46);
@@ -569,7 +571,8 @@ function drawScope() {
     g.font = 'bold 15px sans-serif'; g.fillStyle = col; g.fillText(a1, 8, H - 26);
     g.font = '12px sans-serif'; g.fillStyle = '#fff'; g.fillText(a2, 8, H - 9);
   };
-  if (!aim) {
+  if (!aim && conAim) conSay(conAim.c, say);
+  else if (!aim) {
     g.font = '13px sans-serif'; g.fillStyle = '#ccc';
     g.fillText('照準の近くに機体や星はありません', 8, H - 18);
   } else if (aim.t === 'plane') {
@@ -844,6 +847,7 @@ function calcSky(now) {
   if (sunEl < -6) STARS.forEach(s => {
     try { const h = Astronomy.Horizon(d, obs, s[1], s[2], 'normal'); out.push({kind:'star', name:s[0], az:h.azimuth, el:h.altitude, mag:s[3], desc:s[4]}); } catch (e) {}
   });
+  skyExtra(out, d, obs, sunEl);
   return out;
 }
 function brightRank(s) { return skyObjs.filter(o => o.el > 0 && o.mag < s.mag).length + 1; }
@@ -873,6 +877,7 @@ function renderNight() {
     items.push({s, text:`${label}：${s <= now + 60000 ? 'いま' : hm(s) + 'から'}${dirName(az)}の空（〜${hm(e)}）`});
   });
   items.sort((x, y) => x.s - y.s);
+  moonNight(items, now, obs);
   $('night').innerHTML = '<b>今夜の空</b>　' + (items.length ? items.map(i => esc(i.text)).join('<br>') : '今夜は月や惑星が見えにくい夜です');
   nightAt = now; nightPos = pos.slice();
 }
@@ -1174,6 +1179,117 @@ $('dayReset').onclick = () => {
   skyDays = {days:{}}; curSpot = null; daySave(true); renderDay(today());
 };
 const savedPos = lsGet('sora_lastpos', null);
+// ---------- 星座と月の形（v10） ----------
+// 星座の線は constellations.js（CONSTEL）。空が暗いとき（太陽が地平線の下6°以下）だけ出す
+let conOn = lsGet('sora_con', true) !== false, conObjs = [];
+function skyExtra(out, d, obs, sunEl) {
+  // 月の満ち欠け（輝いている割合）と、光っている側の向き（太陽の方向）
+  const m = out.find(o => o.kind === 'moon');
+  if (m) {
+    try {
+      m.frac = Astronomy.Illumination('Moon', d).phase_fraction;
+      const se = Astronomy.Equator('Sun', d, obs, true, true), sh = Astronomy.Horizon(d, obs, se.ra, se.dec, 'normal');
+      m.limb = limbAngle(m.az, m.el, sh.azimuth, sh.altitude);
+    } catch (e) {}
+  }
+  // 星座の線（地平線より上にかかるものだけ）
+  conObjs = [];
+  if (!conOn || sunEl >= -6 || typeof CONSTEL === 'undefined') return;
+  const hz = (ra, dec) => { const h = Astronomy.Horizon(d, obs, ra, dec, 'normal'); return [h.azimuth, h.altitude]; };
+  CONSTEL.forEach(c => {
+    try {
+      const segs = c[6].map(a => { const pts = []; for (let i = 0; i < a.length; i += 2) pts.push(hz(a[i], a[i + 1])); return pts; });
+      if (segs.every(sg => sg.every(p => p[1] < 0))) return;
+      conObjs.push({id:c[0], name:c[1], season:c[2], star:c[3], desc:c[4], lab:hz(c[5][0], c[5][1]), segs});
+    } catch (e) {}
+  });
+}
+// 月から見た太陽の方向を、画面上の角度（右が0、下向きが正）にする
+function limbAngle(az, el, saz, sel) {
+  const a = az * D2R, e = el * D2R, sa = saz * D2R, se = sel * D2R;
+  const S = [Math.cos(se) * Math.sin(sa), Math.cos(se) * Math.cos(sa), Math.sin(se)];
+  const dx = S[0] * Math.cos(a) - S[1] * Math.sin(a);
+  const dy = -S[0] * Math.sin(e) * Math.sin(a) - S[1] * Math.sin(e) * Math.cos(a) + S[2] * Math.cos(e);
+  return Math.atan2(-dy, dx);
+}
+// 月を満ち欠けの形で描く（frac：輝いている割合、ang：光っている側の向き）
+function drawMoon(g, x, y, r, frac, ang) {
+  const k = Math.max(0, Math.min(1, frac || 0)), rx = r * Math.abs(2 * k - 1);
+  g.save(); g.translate(x, y); g.rotate(ang || 0);
+  g.fillStyle = 'rgba(70,76,92,.85)'; g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill();
+  g.fillStyle = '#fff6d0'; g.beginPath();
+  g.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+  if (k >= 0.5) g.ellipse(0, 0, rx, r, 0, Math.PI / 2, Math.PI * 1.5, false);
+  else g.ellipse(0, 0, rx, r, 0, Math.PI / 2, -Math.PI / 2, true);
+  g.closePath(); g.fill();
+  g.restore();
+}
+function segDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / L)) : 0;
+  return Math.hypot(px - x1 - t * dx, py - y1 - t * dy);
+}
+// スコープに星座を描き、照準にいちばん近い星座を返す（hi() で強調して描き直す）
+function conLayer(g, toXY, dAz, off, W, H, cx, cy, sc) {
+  if (!conObjs.length) return null;
+  const vis = p => p[1] >= -2 && Math.abs(dAz(p[0])) < 100;
+  const draw = (c, hi) => {
+    let best = 1e9;
+    g.strokeStyle = hi ? 'rgba(255,213,79,.9)' : 'rgba(150,180,255,.5)'; g.lineWidth = hi ? 1.8 : 1;
+    g.fillStyle = hi ? '#ffe9a6' : 'rgba(205,218,255,.85)';
+    c.segs.forEach(sg => {
+      for (let i = 1; i < sg.length; i++) {
+        const a = sg[i - 1], b = sg[i];
+        if (!vis(a) || !vis(b) || (a[1] < 0 && b[1] < 0)) continue;
+        const [x1, y1] = toXY(a[0], a[1]), [x2, y2] = toXY(b[0], b[1]);
+        if ((x1 < 0 && x2 < 0) || (x1 > W && x2 > W) || (y1 < 0 && y2 < 0) || (y1 > H && y2 > H)) continue;
+        g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+        best = Math.min(best, segDist(cx, cy, x1, y1, x2, y2));
+      }
+      sg.forEach(p => {
+        if (p[1] < 0 || !vis(p)) return;
+        const [x, y] = toXY(p[0], p[1]);
+        if (!off(x, y)) { g.beginPath(); g.arc(x, y, hi ? 2.2 : 1.6, 0, 7); g.fill(); }
+      });
+    });
+    if (c.lab[1] > 0 && vis(c.lab)) {
+      const [x, y] = toXY(c.lab[0], c.lab[1]);
+      if (!off(x, y)) {
+        g.font = (hi ? 'bold ' : '') + '12px sans-serif'; g.textAlign = 'center';
+        g.fillStyle = hi ? '#ffd54f' : 'rgba(170,200,255,.9)'; g.fillText(c.name, x, y); g.textAlign = 'left';
+      }
+    }
+    return best;
+  };
+  let pick = null;
+  conObjs.forEach(c => { const d = draw(c, false); if (d < 8 * sc && (!pick || d < pick.d)) pick = {c, d}; });
+  g.textAlign = 'left';
+  return pick && {c:pick.c, hi:() => draw(pick.c, true)};
+}
+function conSay(c, say) {
+  const st = '★'.repeat(c.star) + '☆'.repeat(3 - c.star);
+  say(`照準：${c.name}（${c.season === '北' ? '北の空' : c.season + 'の星座'}）${st}`, c.desc, '#ffd54f');
+}
+function showConUi() { $('conBtn').classList.toggle('on', conOn); $('conBtn').textContent = conOn ? '星座：ON' : '星座'; }
+$('conBtn').onclick = () => { conOn = !conOn; lsSet('sora_con', conOn); showConUi(); if (pos) skyObjs = calcSky(Date.now()); };
+showConUi();
+// 今夜の空：月の行を、月齢・月の出・月の入りつきに置き換える
+function moonNight(items, now, obs) {
+  try {
+    const i = items.findIndex(x => x.text.startsWith('月（')), old = i >= 0 ? items.splice(i, 1)[0] : null;
+    const d = new Date(now), nm = Astronomy.SearchMoonPhase(0, d, -35);
+    const age = nm ? ((now - nm.date.getTime()) / 86400000).toFixed(1) : null;
+    const day = t => { const a = new Date(t); return a.getDate() !== d.getDate() ? '明日' : ''; };
+    const ev = [];
+    const r = Astronomy.SearchRiseSet('Moon', obs, +1, d, 1), s = Astronomy.SearchRiseSet('Moon', obs, -1, d, 1);
+    if (r) ev.push({t:r.date.getTime(), k:'月の出'});
+    if (s) ev.push({t:s.date.getTime(), k:'月の入り'});
+    ev.sort((a, b) => a.t - b.t);
+    const see = old ? old.text.replace(/^月（[^）]*）：/, '') : '今夜は見えにくい';
+    const text = `月（${moonPhaseName(now)}${age ? '・月齢' + age : ''}）：${see}　` + ev.map(e => `${e.k} ${day(e.t)}${hm(e.t)}`).join('　');
+    items.unshift({s:old ? old.s : now, text});
+  } catch (e) {}
+}
 if (Array.isArray(savedPos) && savedPos.length === 2 && savedPos.every(v => typeof v === 'number' && isFinite(v))) setPos(savedPos, false, true);
 if ('geolocation' in navigator) {
   navigator.geolocation.watchPosition(

@@ -2032,6 +2032,91 @@ drawScope = function () {
   g.restore();
 };
 
+// ---------- 記録の書き出し・読み込み（v20） ----------
+// 記録（sora_ で始まる保存）を1つのファイルにまとめて書き出し、別の端末や新しいアドレスで読み込めるようにする
+const BK_SKIP = ['sora_routes_v1', 'sora_tle', 'sora_bk_last']; // 取り直せる一時保存と、書き出した日の印は入れない
+let bkLock = false, lsWarnAt = 0;
+// 保存に失敗したら知らせる（10分に1回まで）。読み込みの最中は、いまの記録で上書きしないよう保存を止める
+lsSet = function (k, v) {
+  if (bkLock) return;
+  try { localStorage.setItem(k, JSON.stringify(v)); }
+  catch (e) {
+    if (Date.now() - lsWarnAt < 600000) return;
+    lsWarnAt = Date.now();
+    alertMsg('記録を保存できませんでした。保存場所がいっぱいかもしれません。画面の下の「記録を書き出す」でファイルに残してください', null, false);
+  }
+};
+const bkKeys = () => Object.keys(localStorage).filter(k => k.startsWith('sora_') && !BK_SKIP.includes(k));
+const ymdLabel = t => { const d = new Date(t); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`; };
+// 欄の説明（最後に書き出した日・保存量）
+function bkInfo() {
+  let bytes = 0;
+  try { Object.keys(localStorage).forEach(k => { bytes += (k.length + (localStorage.getItem(k) || '').length) * 2; }); } catch (e) {}
+  const last = lsGet('sora_bk_last', null);
+  $('bkInfo').innerHTML = `最後に書き出した日：${last ? ymdLabel(last) : 'まだ書き出していません'}<br>` +
+    `このサイトの保存量：約${(bytes / 1048576).toFixed(1)}MB／約5MB（同じアドレスのほかのアプリの分も含む）<br>` +
+    'スマホを替えるときや、アドレスが変わるときは、書き出したファイルを新しいほうで読み込んでください';
+}
+// 書き出す
+$('bkOut').onclick = () => {
+  // 画面で使っている最新の記録を先に保存してから集める
+  daySave(true);
+  lsSet('sora_zukan_v1', zukan); lsSet('sora_cities_v1', cities); lsSet('sora_catch_v1', catchData); lsSet('sora_badge_v1', badge);
+  const data = {};
+  bkKeys().forEach(k => { data[k] = localStorage.getItem(k); });
+  const t = Date.now(), file = JSON.stringify({app:'SoraMiru', kind:'kiroku', v:1, t, data});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([file], {type:'application/json'}));
+  a.download = `soramiru-kiroku-${today()}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  lsSet('sora_bk_last', t);
+  bkInfo();
+};
+// 読み込む
+$('bkIn').onclick = () => { $('bkFile').value = ''; $('bkFile').click(); };
+function bkSummary(o) {
+  const P = k => { try { return JSON.parse(o.data[k]); } catch (e) { return null; } };
+  const z = P('sora_zukan_v1'), c = P('sora_catch_v1'), d = P('sora_day_v1'), b = P('sora_badge_v1');
+  const parts = [];
+  if (z && z.types) parts.push(`図鑑${Object.keys(z.types).filter(x => x !== '?').length}機種`);
+  if (c) parts.push(`キャッチ${c.total || 0}回`);
+  if (d && d.days) parts.push(`記録した日${Object.keys(d.days).length}日`);
+  if (b && b.got) parts.push(`バッジ${Object.values(b.got).reduce((n, g) => n + ((g && g.d) || []).length, 0)}個`);
+  return `${o.t ? ymdLabel(o.t) + 'に書き出した' : ''}記録です。${parts.join('・') || '中身の記録はありません'}`;
+}
+$('bkFile').onchange = () => {
+  const f = $('bkFile').files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    let o = null;
+    try { o = JSON.parse(rd.result); } catch (e) {}
+    const ok = o && o.app === 'SoraMiru' && o.kind === 'kiroku' && o.data && typeof o.data === 'object' &&
+      Object.keys(o.data).length && Object.entries(o.data).every(([k, v]) => k.startsWith('sora_') && typeof v === 'string');
+    if (!ok) { alert('このファイルは読み込めません（SoraMiru の記録のファイルではないか、壊れています）。いまの記録はそのままです'); return; }
+    if (!confirm(bkSummary(o) + '\n\nいまの記録を、このファイルの内容に置き換えます。よろしいですか？\n（いまの記録は消えます。残したいときは、先に「記録を書き出す」をしてください）')) return;
+    // 書き込みに失敗したら元に戻す
+    const old = {};
+    bkKeys().forEach(k => { old[k] = localStorage.getItem(k); });
+    bkLock = true;
+    try {
+      Object.keys(old).forEach(k => localStorage.removeItem(k));
+      Object.entries(o.data).forEach(([k, v]) => { if (!BK_SKIP.includes(k)) localStorage.setItem(k, v); });
+    } catch (e) {
+      try { bkKeys().forEach(k => localStorage.removeItem(k)); Object.entries(old).forEach(([k, v]) => localStorage.setItem(k, v)); } catch (e2) {}
+      bkLock = false;
+      alert('保存場所が足りず、読み込めませんでした。いまの記録はそのままです');
+      return;
+    }
+    alert('記録を読み込みました。画面を読み込み直します');
+    location.reload();
+  };
+  rd.onerror = () => alert('ファイルを開けませんでした');
+  rd.readAsText(f);
+};
+bkInfo();
+setInterval(() => { if (!document.hidden) bkInfo(); }, 300000);
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

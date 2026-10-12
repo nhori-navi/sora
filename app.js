@@ -2144,8 +2144,10 @@ fetchRoutes = function (list) {
 // (2) 現在地の誤差が1kmを超えたら「粗い位置」として、真上カウントダウン・真上の知らせ・見た場所の地名を止める
 // (3) 現在地が取れないときは南大沢を仮の中心にせず、地図で場所を選んでもらう（選んだ場所は sora_pick に覚える）
 // (4) 記録は端末ごと、と説明に足す
+// (5) 地図で選んだ場所が、いる場所（現在地）から離れているとき・現在地が分からないときは「よその空」：
+//     図鑑・都市・今日の空・バッジに数えず（よその空ノートに記録＝v23）、「空に向ける」も開かない
 const ROUGH_M = 1000, JAPAN = [137.5, 37.0];
-const GEO_MSG = {1:'許可されていません。ブラウザの設定で位置情報を許可するか、「地図で場所を選ぶ」で場所を選んでください',
+const GEO_MSG = {1:'許可されていません。ブラウザの設定で位置情報を許可するか、「よその空に行く」で場所を選んでください',
   2:'現在地を取得できませんでした（電波や Wi-Fi の状態を確かめてください）', 3:'時間内に現在地が取れませんでした（しばらくして開き直してください）'};
 const okPt = v => Array.isArray(v) && v.length === 2 && v.every(x => typeof x === 'number' && isFinite(x));
 let posAcc = null, geoErr = '', lastGps = null, pickMode = false, pickCall = false;
@@ -2154,14 +2156,18 @@ BK_SKIP.push('sora_pick'); // 地図で選んだ場所は端末ごとの設定�
 const isRough = () => !pickPos && !usingSaved && !usingDef && posAcc != null && posAcc > ROUGH_M;
 const posUnsure = () => !pickPos && (usingSaved || usingDef || isRough());
 const accKm = () => (posAcc / 1000).toFixed(posAcc < 10000 ? 1 : 0);
+// 地図で選んだ場所が現在地の近く（誤差の範囲内、少なくとも5km以内）なら記録する。離れている・現在地が分からないなら「よその空」
+const viewOnly = () => !!pickPos && !(lastGps && gcKm(pickPos, lastGps) <= Math.max(5, (posAcc || 0) / 1000));
 // 位置情報の誤差（accuracy）を受け取り、エラーを日本語にする（起動処理の watchPosition の前に包む）
 try {
   const geo = navigator.geolocation, wpBase = geo && geo.watchPosition && geo.watchPosition.bind(geo);
   if (wpBase) geo.watchPosition = function (ok, ng, opt) {
     return wpBase(g => {
+      const vo = viewOnly();
       posAcc = g.coords && typeof g.coords.accuracy === 'number' ? g.coords.accuracy : null;
       geoErr = ''; lastGps = [g.coords.longitude, g.coords.latitude];
       ok(g); locUi();
+      if (pickPos && vo !== viewOnly() && pos) render();
     }, e => {
       geoErr = GEO_MSG[e && e.code] || String((e && e.message) || '');
       if (ng) ng({code:e && e.code, message:geoErr});
@@ -2169,6 +2175,7 @@ try {
     }, opt);
   };
 } catch (e) {}
+if (!navigator.geolocation) geoErr = 'この端末（ブラウザ）は位置情報に対応していません';
 // 現在地の切り替え：地図で選んだ場所を使っている間は、現在地（GPS）が届いても切り替えない
 const setPosV21 = setPos;
 setPos = function (p, def, saved) {
@@ -2180,29 +2187,35 @@ setPos = function (p, def, saved) {
 };
 // 現在地が分かるまでは、地図を日本全体にしておく
 if (!pickPos && !okPt(lsGet('sora_lastpos', null))) map.jumpTo({center:JAPAN, zoom:4.3});
-// 「地図で場所を選ぶ」の行（「〇機（半径30km）」の行の下）
+// 「よその空に行く」の行（「〇機（半径30km）」の行の下）
 {
   const bar = document.createElement('div');
   bar.id = 'locBar'; bar.className = 'small';
-  bar.innerHTML = '<button id="pickBtn">地図で場所を選ぶ</button> <span id="locInfo"></span>';
+  bar.innerHTML = '<button id="pickBtn">よその空に行く</button><button id="backBtn" style="display:none">現在地に戻す</button> <span id="locInfo"></span>';
   $('head').after(bar);
 }
 function locUi() {
   const b = $('pickBtn'), info = $('locInfo');
   if (!b) return;
   b.style.display = pickMode && !pos ? 'none' : '';
+  $('backBtn').style.display = pickPos && !pickMode ? '' : 'none';
   if (pickMode) {
     b.textContent = '選ぶのをやめる';
-    info.textContent = '地図をタップして、空を見る場所を選んでください（拡大してから選ぶと正確です）';
+    info.textContent = '地図をタップして、空を見に行く場所を選んでください（拡大してから選ぶと正確です）';
   } else if (pickPos) {
-    b.textContent = '現在地に戻す';
-    info.textContent = '地図で選んだ場所の空です（現在地は使っていません）';
+    b.textContent = '別の場所へ';
+    info.textContent = viewOnly() && !lastGps && !geoErr ? 'よその空かどうか、現在地を確認しています（確認できるまで記録しません）'
+      : viewOnly() ? 'よその空です。' + (lastGps ? 'いる場所から離れている' : '現在地が分からない')
+      + 'ので、図鑑・都市・今日の空・バッジには数えず、「よその空ノート」に記録します（「空に向ける」は使えません）'
+      + (lastGps ? '' : '。位置情報を許可して、今いる場所の近くを選ぶと、いつもの記録になります')
+      : '地図で選んだ場所の空です（今いる場所の近くなので、いつもどおり記録します）';
   } else {
-    b.textContent = '地図で場所を選ぶ';
-    info.textContent = isRough() ? `現在地の誤差が大きい（約${accKm()}km）ため、真上カウントダウンと真上の知らせを止めています。地図で場所を選ぶと正確にできます`
+    b.textContent = 'よその空に行く';
+    info.textContent = isRough() ? `現在地の誤差が大きい（約${accKm()}km）ため、真上カウントダウンと真上の知らせを止めています。「よその空に行く」で今いる場所を選び直すと正確にできます`
       : usingSaved && geoErr ? '現在地が取れないため、前回の場所で表示しています（' + geoErr + '）' : '';
   }
   if (!pos) $('head').textContent = pickMode ? (geoErr ? '現在地が取れません。' : '') + '地図をタップして、空を見る場所を選んでください' : '現在地を取得中…';
+  if (window.yosoUiHook) window.yosoUiHook(); // よその空の地名（v23）
   try { map.getCanvas().style.cursor = pickMode ? 'crosshair' : ''; } catch (e) {}
 }
 map.on('click', e => {
@@ -2216,26 +2229,26 @@ map.on('click', e => {
 });
 $('pickBtn').onclick = () => {
   if (pickMode) { if (pos) { pickMode = false; locUi(); } return; }
-  if (pickPos) { // 現在地に戻す
-    pickPos = null;
-    try { localStorage.removeItem('sora_pick'); } catch (e) {}
-    if (lastGps) {
-      pickCall = true;
-      try { setPos(lastGps, false, false); } finally { pickCall = false; }
-      map.jumpTo({center:lastGps, zoom:9});
-    } else usingSaved = true; // 現在地が届いたら切り替わる
-    locUi(); render();
-    setTimeout(tick, busy ? 1500 : 0);
-    return;
-  }
   if (sky) setSky(false);
   pickMode = true; locUi();
+};
+$('backBtn').onclick = () => { // 現在地に戻す
+  if (!pickPos) return;
+  pickPos = null;
+  try { localStorage.removeItem('sora_pick'); } catch (e) {}
+  if (lastGps) {
+    pickCall = true;
+    try { setPos(lastGps, false, false); } finally { pickCall = false; }
+    map.jumpTo({center:lastGps, zoom:9});
+  } else usingSaved = true; // 現在地が届いたら切り替わる
+  locUi(); render();
+  setTimeout(tick, busy ? 1500 : 0);
 };
 // 「〇機（半径30km）」の行の注意書き
 const renderV17 = render;
 render = function () {
   renderV17();
-  const note = pickPos ? '地図で選んだ場所' : isRough() ? `現在地の誤差 約${accKm()}km（真上の知らせは停止中）`
+  const note = pickPos ? (viewOnly() ? 'よその空（よその空ノートに記録中）' : '地図で選んだ場所') : isRough() ? `現在地の誤差 約${accKm()}km（真上の知らせは停止中）`
     : usingSaved && geoErr ? '前回の場所で表示中（現在地が取れません）' : '';
   if (note) $('head').textContent = $('head').textContent.replace(/　※.*$/, '') + '　※' + note;
 };
@@ -2260,6 +2273,11 @@ spotFor = function (D, now) {
 const noSensor = () => !gotOri && !(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 if (noSensor()) $('skyBtn').textContent = '空に向ける（スマホ用）';
 $('skyBtn').onclick = () => {
+  if (!sky && viewOnly()) {
+    alertMsg('よその空では「空に向ける」は使えません（その場所にいないため）。「現在地に戻す」を押すと使えます', null, false);
+    $('toast').classList.add('con');
+    return;
+  }
   if (!sky && noSensor()) {
     alertMsg('「空に向ける」はスマホで開くと使えます（向きのセンサーが必要です）。キャッチ・星座を探す・方角合わせも、この画面の機能です', null, false);
     $('toast').classList.add('con');
@@ -2267,6 +2285,12 @@ $('skyBtn').onclick = () => {
   }
   setSky(!sky);
 };
+// よその空のときはいつもの記録に数えない（図鑑・都市の候補・今日の空・宇宙ステーションを見た時刻。バッジはこれらから数える）
+const recordV8 = record, noteNearV8 = noteNear, dayRecordV8 = dayRecord, dayIssV8 = dayIss;
+record = function (list) { if (!viewOnly()) recordV8(list); };
+noteNear = function (list, now) { if (!viewOnly()) noteNearV8(list, now); };
+dayRecord = function (list, now) { if (!viewOnly()) dayRecordV8(list, now); };
+dayIss = function (now) { if (!viewOnly()) dayIssV8(now); };
 // 記録は端末ごと
 const bkInfoV20 = bkInfo;
 bkInfo = function () {
@@ -2274,6 +2298,151 @@ bkInfo = function () {
   $('bkInfo').innerHTML += '<br>記録はこの端末のこのブラウザの中にあります。パソコンとスマホでは別々です';
 };
 bkInfo();
+locUi();
+
+// ---------- よその空ノート（v23） ----------
+// 「よその空に行く」で、いる場所から離れた場所を選んだとき（よその空）に見た機体を、いつもの記録とは別のノートに集める
+// 場所ごと：地名（OpenStreetMap の Nominatim で1回だけ調べる）・行った日・機体の数・機種・航空会社・軍用機。キャッチや点・バッジはなし
+const YOSO_KM = 20, YOSO_MAX = 200;
+let yoso = lsGet('sora_yoso_v1', null);
+if (!yoso || !Array.isArray(yoso.pl) || !yoso.types) yoso = {pl:[], types:{}, seen:{}};
+if (!yoso.seen) yoso.seen = {};
+let yosoCur = null, yosoNameTry = 0, yosoOpenId = null;
+const yosoSave = () => lsSet('sora_yoso_v1', yoso);
+// 現在地の確認を待っている間（よその空かどうかまだ決まらない間）は記録しない
+const yosoOn = () => viewOnly() && !!pos && (!!lastGps || !!geoErr);
+// いま行っているよその空の場所（20km以内に前に行った場所があれば同じ場所として続ける）
+function yosoPlace() {
+  if (!pickPos) return null;
+  if (yosoCur && gcKm(yosoCur.p, pickPos) <= YOSO_KM) return yosoCur;
+  let best = null, bd = YOSO_KM;
+  yoso.pl.forEach(x => { const d = gcKm(x.p, pickPos); if (d <= bd) { bd = d; best = x; } });
+  if (!best) {
+    best = {id:Date.now().toString(36), name:'', cc:'', ctry:'', p:[+pickPos[0].toFixed(2), +pickPos[1].toFixed(2)],
+      first:today(), last:today(), d:[], n:0, ty:{}, al:{}, mil:0};
+    yoso.pl.push(best);
+    if (yoso.pl.length > YOSO_MAX) { yoso.pl.sort((a, b) => a.last.localeCompare(b.last)); yoso.pl.splice(0, yoso.pl.length - YOSO_MAX); }
+    yosoSave();
+  }
+  yosoCur = best;
+  return best;
+}
+// 地名（OpenStreetMap の Nominatim。1秒1回までの決まりがあるので、場所ごとに1回、失敗したら5分あけてやり直す）
+async function yosoName(e) {
+  if (!e || e.name || Date.now() - yosoNameTry < 300000) return;
+  yosoNameTry = Date.now();
+  try {
+    const r = await tfetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${e.p[1]}&lon=${e.p[0]}&zoom=10&accept-language=ja`, 10000);
+    const j = await r.json(), a = (j && j.address) || {};
+    e.name = a.city || a.town || a.village || a.municipality || a.county || a.state || a.region || (j && j.error ? '地名なし（海の上など）' : '');
+    e.ctry = a.country || ''; e.cc = (a.country_code || '').toUpperCase();
+    if (!e.name) return;
+    yosoNameTry = 0; yosoSave(); yosoUi();
+    if (yosoIsOpen()) renderYoso();
+  } catch (er) {}
+}
+const yosoLabel = e => e ? (e.name || '地名を調べ中') + (e.ctry ? `（${e.ctry}）` : '') : '';
+// 機体を記録する（同じ場所・同じ日は1機1回）
+function yosoRecord(list) {
+  if (!yosoOn()) return;
+  const e = yosoPlace(); if (!e) return;
+  yosoName(e);
+  const d = today(), fresh = [];
+  if (!e.d.includes(d)) e.d.push(d);
+  e.last = d;
+  list.forEach(p => {
+    if (p.ground) return;
+    const k = e.id + '|' + p.hex;
+    if (yoso.seen[k] === d) return;
+    yoso.seen[k] = d; e.n++;
+    const code = p.type || '?';
+    e.ty[code] = (e.ty[code] || 0) + 1;
+    if (/^[A-Z]{3}\d/.test(p.cs || '')) { const al = p.cs.slice(0, 3); e.al[al] = (e.al[al] || 0) + 1; }
+    if (p.mil) e.mil++;
+    if (code === '?') return;
+    if (!yoso.types[code]) { yoso.types[code] = {n:0, first:d}; if (!zukan.types[code]) fresh.push(code); }
+    yoso.types[code].n++;
+  });
+  for (const k in yoso.seen) if (yoso.seen[k] !== d) delete yoso.seen[k];
+  yosoSave();
+  if (fresh.length) {
+    alertMsg(`よその空ノート：自分の空ではまだ見たことのない機種 ${fresh.length}種（${fresh.slice(0, 3).map(tyName).join('、')}${fresh.length > 3 ? ' ほか' : ''}）`, null, false);
+    $('toast').classList.add('con');
+  }
+  locUi();
+  if (yosoIsOpen()) renderYoso();
+}
+const recordV22 = record;
+record = function (list) { recordV22(list); yosoRecord(list); };
+// 「よその空に行く」の行に、いまの場所の名前を出す
+function yosoUi() {
+  const info = $('locInfo');
+  if (!info || pickMode || !pickPos || !yosoOn()) return;
+  let e = yosoCur && gcKm(yosoCur.p, pickPos) <= YOSO_KM ? yosoCur : null;
+  if (!e) yoso.pl.forEach(x => { if (gcKm(x.p, pickPos) <= YOSO_KM && (!e || gcKm(x.p, pickPos) < gcKm(e.p, pickPos))) e = x; });
+  if (e) info.textContent = `よその空：${yosoLabel(e)}。` + info.textContent.replace(/^よその空(です|：[^。]*)。/, '');
+}
+window.yosoUiHook = yosoUi;
+// 画面
+{
+  const st = document.createElement('style');
+  st.textContent = '#yoso{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}' +
+    '.ycard{border:1px solid #ddd;border-left:6px solid #2e7d6b;border-radius:6px;padding:6px 8px;margin:6px 0;line-height:1.6;cursor:pointer}' +
+    '.ycard.now{background:#eef8f5}.ynew{color:#2e7d6b;font-weight:bold}';
+  document.head.appendChild(st);
+  const box = document.createElement('div'); box.id = 'yoso';
+  box.innerHTML = '<button id="yosoClose">閉じる</button> <b>よその空ノート</b>　<span id="yosoSum" class="small"></span><button id="yosoReset" class="reset">記録を消す</button>' +
+    '<div id="yosoBody"></div><div class="small" style="margin-top:8px">「よその空に行く」で、いる場所から離れた場所を選んだときに見た機体です。いつもの図鑑・都市・今日の空・バッジとは別に数えます（同じ場所・同じ日は1機1回）。' +
+    '<span class="ynew">★</span>は自分の空（いつもの図鑑）ではまだ見たことのない機種です。地名：© OpenStreetMap contributors（Nominatim）</div>';
+  document.body.appendChild(box);
+  const btn = document.createElement('button'); btn.id = 'yosoBtn'; btn.textContent = 'よその空ノート';
+  $('badgeBtn').after(btn);
+}
+const yosoIsOpen = () => $('yoso').style.display === 'block';
+function renderYoso() {
+  const pl = yoso.pl.slice().sort((a, b) => b.last.localeCompare(a.last) || b.n - a.n);
+  const nc = new Set(pl.map(e => e.cc).filter(Boolean)).size, ks = Object.keys(yoso.types);
+  const newN = ks.filter(c => !zukan.types[c]).length;
+  $('yosoSum').textContent = `${pl.length}か所・${nc}か国・${ks.length}機種（★ ${newN}）`;
+  if (!pl.length) {
+    $('yosoBody').innerHTML = '<div class="drow small">まだ記録がありません。「よその空に行く」を押して、地図で行ってみたい場所（海外でも）をタップしてください</div>';
+    return;
+  }
+  const cur = yosoOn() && yosoCur;
+  $('yosoBody').innerHTML = pl.map(e => {
+    const tys = Object.keys(e.ty).filter(c => c !== '?');
+    let h = `<div class="ycard${e === cur ? ' now' : ''}" data-id="${esc(e.id)}"><b>${esc(yosoLabel(e))}</b>${e === cur ? '　<span class="ynew">いまここ</span>' : ''}<br>` +
+      `<span class="small">${esc(e.last.slice(5).replace('-', '/'))}・${e.d.length}日行った・機体 ${e.n}機・${tys.length}機種${e.mil ? `・<b style="color:#c0392b">軍用機 ${e.mil}機</b>` : ''}・航空会社 ${Object.keys(e.al).length}社</span>`;
+    if (yosoOpenId === e.id) {
+      const list = tys.sort((a, b) => e.ty[b] - e.ty[a]).map(c => `${zukan.types[c] ? '' : '<span class="ynew">★</span>'}${esc(tyName(c))}${e.ty[c] > 1 ? '×' + e.ty[c] : ''}`);
+      const als = Object.keys(e.al).sort((a, b) => e.al[b] - e.al[a]).map(a => esc(AIRLINE[a] || a));
+      h += `<div class="small" style="margin-top:4px;color:#333">機種：${list.join('、') || 'なし'}<br>航空会社：${als.join('、') || 'なし'}<br>行った日：${esc(e.d.map(x => x.slice(5).replace('-', '/')).join('、'))}</div>`;
+    }
+    return h + '</div>';
+  }).join('');
+  $('yosoBody').querySelectorAll('.ycard').forEach(c => c.onclick = () => { yosoOpenId = yosoOpenId === c.dataset.id ? null : c.dataset.id; renderYoso(); });
+  pl.forEach(e => { if (!e.name) yosoName(e); });
+}
+const yosoCloseBase = () => { $('yoso').style.display = 'none'; };
+$('yosoBtn').onclick = () => {
+  if (yosoIsOpen()) return;
+  renderYoso(); $('yoso').style.display = 'block'; $('yoso').scrollTop = 0;
+  navPush('yoso', yosoIsOpen, yosoCloseBase);
+};
+$('yosoClose').onclick = () => navClose('yoso', yosoCloseBase);
+$('yosoReset').onclick = () => {
+  if (!confirm('よその空ノートの記録をすべて消します（いつもの記録は残ります）。よろしいですか？')) return;
+  yoso = {pl:[], types:{}, seen:{}}; yosoCur = null; yosoSave(); renderYoso(); locUi();
+};
+// 記録の読み込みの確認に、よその空ノートの場所の数も出す
+const bkSummaryV20 = bkSummary;
+bkSummary = function (o) {
+  let t = bkSummaryV20(o);
+  try { const y = JSON.parse(o.data.sora_yoso_v1 || 'null'); if (y && Array.isArray(y.pl) && y.pl.length) t += `・よその空${y.pl.length}か所`; } catch (e) {}
+  return t;
+};
+// よその空を選んだまま開き直したときは、現在地を待たずにその場所で始める（記録は現在地が分かってから）
+if (pickPos && !pos) { pickCall = true; try { setPos(pickPos, false, false); } finally { pickCall = false; } }
 locUi();
 
 const savedPos = lsGet('sora_lastpos', null);

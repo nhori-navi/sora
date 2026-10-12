@@ -1674,7 +1674,7 @@ function drawShareCard(k) {
   g.textAlign = 'left'; g.font = `26px ${F}`; g.fillStyle = '#fff';
   notes.slice(0, 3).forEach((s, i) => g.fillText(fitText(g, s, W - 120), 60, 1304 - (Math.min(3, notes.length) - 1 - i) * 36));
   g.shadowBlur = 0; g.font = `20px ${F}`; g.fillStyle = 'rgba(255,255,255,.75)'; g.textAlign = 'right';
-  g.fillText('機体データ：adsb.lol　行き先：adsbdb', W - 60, H - 14);
+  g.fillText('機体データ：adsb.lol（ODbL）　行き先：Virtual Radar Server', W - 60, H - 14);
   return c;
 }
 function renderShare() {
@@ -2116,6 +2116,28 @@ $('bkFile').onchange = () => {
 };
 bkInfo();
 setInterval(() => { if (!document.hidden) bkInfo(); }, 300000);
+
+// ---------- 行き先の食い違いを直す（v21） ----------
+// ためてある行き先と機体のいまの位置を見比べ、「出発地→行き先」の線から大きく外れていたら調べ直す
+// （経由便が別の区間を飛んでいるとき、同じ便名で行き先が変わった日など）。同じ便は30分に1回まで
+const routeRecheck = new Map(); // 便名 → 最後に調べ直した時刻
+function routeOff(p, r) {
+  if (!r || r.none || !r.a || r.a.length < 2 || !p.p) return false;
+  const o = [r.a[0].lon, r.a[0].lat], d = [r.a[1].lon, r.a[1].lat];
+  const D = gcKm(o, d), detour = gcKm(o, p.p) + gcKm(p.p, d) - D;
+  return detour > Math.max(200, D * 0.3);
+}
+const fetchRoutesV20 = fetchRoutes;
+fetchRoutes = function (list) {
+  const now = Date.now();
+  list.forEach(p => {
+    if (p.ground || p.mil || !p.cs || !routeOff(p, routes[p.cs])) return;
+    if (now - (routeRecheck.get(p.cs) || 0) < 1800000) return;
+    routeRecheck.set(p.cs, now);
+    delete routes[p.cs];
+  });
+  return fetchRoutesV20(list);
+};
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

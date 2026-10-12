@@ -12,6 +12,7 @@ map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 let pos = null, usingDef = false, sel = null, planes = [], timer = null, busy = false, routeBusy = false, meMarker = null;
 let sky = false, head = null, elevNow = 0, sx = 0, sy = 0, gotOri = false, aimHex = null, toastHex = null, toastTimer = null;
 let usingSaved = false, retryTimer = null, relayIdx = 0, allList = [], camOn = false, camStream = null;
+let realHome = () => pos || DEF; // 本当の現在地（v25 で、よその空にいても最後に分かった現在地を返すように切り替える）
 const markers = new Map(), photos = new Map(), notified = new Set();
 
 // ---------- 保存（スマホ内） ----------
@@ -939,7 +940,7 @@ function gcLine(a, b) { // 大圏コース（地球上の最短経路）の線
   return pts;
 }
 function cityRows() {
-  const home = pos || DEF;
+  const home = realHome();
   return Object.entries(cities.list).map(([id, c]) => ({id, ...c, d:gcKm(home, [c.lon, c.lat])}))
     .sort((x, y) => y.n - x.n || y.last.localeCompare(x.last));
 }
@@ -957,7 +958,7 @@ function renderCities() {
 }
 function drawCitiesMap(rows) {
   if (!citiesMap) return;
-  const home = pos || DEF;
+  const home = realHome();
   const lines = rows.map(r => ({type:'Feature', properties:{}, geometry:{type:'LineString', coordinates:gcLine(home, [r.lon, r.lat])}}));
   const pts = rows.map(r => {
     const g = gcLine(home, [r.lon, r.lat]), end = g[g.length - 1];
@@ -984,7 +985,7 @@ function drawCitiesMap(rows) {
 }
 $('citiesBtn').onclick = () => {
   $('cities').style.display = 'block';
-  if (!citiesMap) citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:pos || DEF, zoom:1.5});
+  if (!citiesMap) citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5});
   renderCities();
 };
 $('citiesClose').onclick = () => {
@@ -994,7 +995,7 @@ $('citiesClose').onclick = () => {
 $('citiesReset').onclick = () => {
   if (!confirm('この空から行った都市の記録をすべて消します。よろしいですか？')) return;
   cities = {list:{}, seen:{}}; lsSet('sora_cities_v1', cities);
-  if (citiesMap) { citiesMap.remove(); citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:pos || DEF, zoom:1.5}); }
+  if (citiesMap) { citiesMap.remove(); citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5}); }
   renderCities();
 };
 
@@ -1089,7 +1090,7 @@ function dayRecord(list, now) {
 function dayNewType(code) { const D = dayGet(); if (!D.nt.includes(code)) { D.nt.push(code); daySave(false); } }
 function dayCity(id, name, ap) {
   const D = dayGet();
-  if (!D.ct[id]) { D.ct[id] = {name, km:Math.round(gcKm(pos || DEF, [ap.lon, ap.lat]))}; daySave(false); }
+  if (!D.ct[id]) { D.ct[id] = {name, km:Math.round(gcKm(realHome(), [ap.lon, ap.lat]))}; daySave(false); }
 }
 function dayIss(now) { const D = dayGet(); if (!D.iss) { D.iss = now; daySave(false); } }
 
@@ -1467,7 +1468,7 @@ let badge = lsGet('sora_badge_v1', null);
 const badgeFirst = !badge || !badge.got;
 if (badgeFirst) badge = {got:{}, n:{mil:0, sun:0, night:0, top:0, srare:0}, al:{}, cc:{}, places:{}, days:{}};
 const bSave = () => lsSet('sora_badge_v1', badge);
-const homeP = () => pos || DEF;
+const homeP = () => realHome();
 const BADGES = [ // [id, 分類, 名前, 段階, 値を出す関数, 単位]
   ['catch', 'キャッチ', 'キャッチした機数', [1, 10, 50, 100, 500], () => catchData.total || 0, '機'],
   ['ctype', 'キャッチ', 'キャッチした機種', [5, 15, 30], () => Object.keys(catchData.types).filter(c => c !== '?').length, '機種'],
@@ -1602,7 +1603,7 @@ function fitText(g, s, max) { while (s.length > 1 && g.measureText(s).width > ma
 function drawShareCard(k) {
   const D = skyDays.days[k] || {n:0, ty:{}}, isToday = k === today();
   const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d'), F = 'sans-serif', home = pos || DEF;
+  const g = c.getContext('2d'), F = 'sans-serif', home = realHome();
   const last = D.cat && D.cat.length ? D.cat[D.cat.length - 1].t : null;
   const bg = SKY_BG[skyKind(isToday ? Date.now() : (last || new Date(k + 'T12:00:00').getTime()))];
   const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, bg[0]); gr.addColorStop(1, bg[1]);
@@ -2418,7 +2419,7 @@ function renderYoso() {
   $('yosoBody').querySelectorAll('.ycard').forEach(c => c.onclick = () => { yosoOpenId = yosoOpenId === c.dataset.id ? null : c.dataset.id; renderYoso(); });
   pl.forEach(e => { if (!e.name) yosoName(e); });
 }
-const yosoCloseBase = () => { $('yoso').style.display = 'none'; };
+const yosoCloseBase = () => { $('yoso').style.display = 'none'; if (window.yosoMapOff) window.yosoMapOff(); }; // 世界地図は v25
 $('yosoBtn').onclick = () => {
   if (yosoIsOpen()) return;
   renderYoso(); $('yoso').style.display = 'block'; $('yoso').scrollTop = 0;
@@ -2599,6 +2600,181 @@ renderYoso = function () {
     const cons = [...new Set(e.con.map(x => x.name))];
     det.innerHTML = (cl.length ? `キャッチ：<br>${cl.join('<br>')}` : 'キャッチ：まだありません') + (cons.length ? `<br>見つけた星座：${esc(cons.join('、'))}` : '');
     card.appendChild(det);
+  });
+};
+locUi();
+
+// ---------- 都市の線を出発地→行き先に・世界の空港・よその空の世界地図（v25） ----------
+// (1) 「本当の現在地」：よその空にいても、距離・バッジ・シェアカードの方向は、最後に分かった現在地から測る
+// (2) 都市の地図の線は、記録した便の「出発地→行き先」で引く（v25 から出発地も記録。それより前の記録は行き先の点だけ）
+// (3) 世界の空港ボタンで、有名な空港の近くの空へひと押しで行ける
+// (4) よその空ノートに世界地図と「この空に行く」ボタン
+realHome = () => {
+  if (pickPos && !viewOnly()) return pickPos; // 今いる場所の近くを地図で選び直したとき
+  const last = lsGet('sora_lastpos', null);
+  return lastGps || (okPt(last) ? last : null) || (!pickPos && pos) || DEF;
+};
+// --- 都市：出発地と行き先の組を記録する（recordCities の中で記録した便を拾う）
+const recordCitiesV8 = recordCities;
+recordCities = function () {
+  const before = new Map(nearCand);
+  recordCitiesV8();
+  const d = today(), rt = cities.rt || (cities.rt = {});
+  let changed = false;
+  before.forEach((v, hex) => {
+    if (nearCand.has(hex)) return; // まだ行き先が分からない
+    const r = routeEntry(v.cs);
+    if (!r || r.none || !r.a || cities.seen[v.cs + '|' + d] !== d) return;
+    const k = 'rt|' + v.cs + '|' + d;
+    if (cities.seen[k]) return;
+    cities.seen[k] = d;
+    const o = r.a[0], ap = r.a[1], id = ap.iata || ap.name, key = (o.iata || o.name) + '>' + id;
+    const e = rt[key] || (rt[key] = {o:{name:apName(o), lat:o.lat, lon:o.lon}, d:id, n:0, first:d, last:d});
+    e.n++; e.last = d; changed = true;
+  });
+  if (changed) { lsSet('sora_cities_v1', cities); if ($('cities').style.display === 'block') renderCities(); }
+};
+// --- 都市の地図：線は出発地→行き先。行き先の点・出発地の小さな点・この空（現在地）
+const wrapLon = (lon, ref) => { while (lon - ref > 180) lon -= 360; while (lon - ref < -180) lon += 360; return lon; };
+drawCitiesMap = function (rows) {
+  if (!citiesMap) return;
+  const home = realHome(), ref = home[0], rt = Object.values(cities.rt || {});
+  const fc = f => ({type:'FeatureCollection', features:f});
+  const lines = [], origins = new Map();
+  rt.forEach(e => {
+    const c = cities.list[e.d]; if (!c) return;
+    const o = [wrapLon(e.o.lon, ref), e.o.lat];
+    lines.push({type:'Feature', properties:{n:e.n}, geometry:{type:'LineString', coordinates:gcLine(o, [c.lon, c.lat])}});
+    origins.set(e.o.name, o);
+  });
+  const pts = rows.map(r => ({type:'Feature', properties:{name:r.name, n:r.n}, geometry:{type:'Point', coordinates:[wrapLon(r.lon, ref), r.lat]}}));
+  const ors = [...origins].filter(([nm]) => !rows.some(r => r.name === nm)).map(([nm, p]) => ({type:'Feature', properties:{name:nm}, geometry:{type:'Point', coordinates:p}}));
+  const put = () => {
+    if (!citiesMap.getSource('cl')) {
+      citiesMap.addSource('cl', {type:'geojson', data:fc(lines)});
+      citiesMap.addLayer({id:'cl', type:'line', source:'cl', paint:{'line-color':'#e67e22', 'line-opacity':0.7,
+        'line-width':['interpolate', ['linear'], ['get', 'n'], 1, 1.2, 10, 3, 50, 5]}});
+      citiesMap.addSource('co', {type:'geojson', data:fc(ors)});
+      citiesMap.addLayer({id:'co', type:'circle', source:'co', paint:{'circle-color':'#888', 'circle-radius':3, 'circle-stroke-color':'#fff', 'circle-stroke-width':1}});
+      citiesMap.addSource('cp', {type:'geojson', data:fc(pts)});
+      citiesMap.addLayer({id:'cp', type:'circle', source:'cp', paint:{'circle-color':'#c0392b', 'circle-stroke-color':'#fff', 'circle-stroke-width':1,
+        'circle-radius':['interpolate', ['linear'], ['get', 'n'], 1, 4, 10, 8, 50, 14]}});
+      citiesMap.addLayer({id:'cn', type:'symbol', source:'cp', layout:{'text-field':['get', 'name'], 'text-size':12, 'text-offset':[0, 1.1], 'text-anchor':'top'},
+        paint:{'text-color':'#333', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
+      citiesMap.addSource('home', {type:'geojson', data:fc([{type:'Feature', properties:{}, geometry:{type:'Point', coordinates:home}}])});
+      citiesMap.addLayer({id:'home', type:'circle', source:'home', paint:{'circle-color':'#1e90ff', 'circle-radius':6, 'circle-stroke-color':'#fff', 'circle-stroke-width':2}});
+    } else {
+      citiesMap.getSource('cl').setData(fc(lines)); citiesMap.getSource('co').setData(fc(ors)); citiesMap.getSource('cp').setData(fc(pts));
+      citiesMap.getSource('home').setData(fc([{type:'Feature', properties:{}, geometry:{type:'Point', coordinates:home}}]));
+    }
+    const b = new mapboxgl.LngLatBounds(home, home);
+    pts.concat(ors).forEach(p => b.extend(p.geometry.coordinates));
+    citiesMap.fitBounds(b, {padding:40, maxZoom:6, duration:0});
+  };
+  if (citiesMap.isStyleLoaded()) put(); else citiesMap.once('load', put);
+};
+const renderCitiesV8 = renderCities;
+renderCities = function () {
+  renderCitiesV8();
+  const n = Object.keys(cities.rt || {}).length;
+  if (Object.keys(cities.list).length) $('citiesSum').textContent += `　（地図の線：出発地→行き先 ${n}路線）`;
+};
+// --- 世界の空港（押すと、その空港の近くのよその空へ）
+const AIRPORTS = [ // [名前, 国, 国の記号, 経度, 緯度]
+  ['羽田空港', '日本', 'JP', 139.781, 35.553], ['成田空港', '日本', 'JP', 140.393, 35.772], ['関西空港', '日本', 'JP', 135.244, 34.434],
+  ['仁川空港', '韓国', 'KR', 126.441, 37.460], ['香港空港', '中国（香港）', 'HK', 113.918, 22.308], ['シンガポール・チャンギ空港', 'シンガポール', 'SG', 103.991, 1.364],
+  ['ドバイ空港', 'アラブ首長国連邦', 'AE', 55.365, 25.253], ['ロンドン・ヒースロー空港', 'イギリス', 'GB', -0.454, 51.470],
+  ['パリ・シャルル・ド・ゴール空港', 'フランス', 'FR', 2.548, 49.010], ['フランクフルト空港', 'ドイツ', 'DE', 8.562, 50.038],
+  ['ニューヨーク JFK空港', 'アメリカ合衆国', 'US', -73.778, 40.641], ['ロサンゼルス空港', 'アメリカ合衆国', 'US', -118.408, 33.942],
+  ['ホノルル空港', 'アメリカ合衆国', 'US', -157.922, 21.318], ['シドニー空港', 'オーストラリア', 'AU', 151.177, -33.946]];
+let yosoMeta = null; // 空港ボタンで行ったときの名前（地名を調べずにこの名前を使う）
+const yosoPlaceV24 = yosoPlace;
+yosoPlace = function () {
+  const e = yosoPlaceV24();
+  if (e && yosoMeta && !e.name && gcKm(yosoMeta.p, e.p) <= YOSO_KM) {
+    e.name = yosoMeta.name; e.ctry = yosoMeta.ctry; e.cc = yosoMeta.cc; yosoSave();
+  }
+  return e;
+};
+// よその空へ行く（空港ボタン・ノートの「この空に行く」・世界地図の印から）
+function yosoGo(p, meta) {
+  pickMode = false;
+  yosoMeta = meta ? {p, ...meta} : null;
+  pickPos = [+p[0].toFixed(4), +p[1].toFixed(4)]; lsSet('sora_pick', pickPos);
+  pickCall = true;
+  try { setPos(pickPos, false, false); } finally { pickCall = false; }
+  map.jumpTo({center:pickPos, zoom:9});
+  $('airList').style.display = 'none';
+  if (yosoIsOpen()) navClose('yoso', yosoCloseBase);
+  locUi(); render();
+  setTimeout(tick, busy ? 1500 : 0);
+}
+{
+  const ab = document.createElement('button'); ab.id = 'airBtn'; ab.textContent = '世界の空港';
+  $('pickBtn').after(ab);
+  const al = document.createElement('div'); al.id = 'airList'; al.style.cssText = 'display:none;margin:4px 0';
+  al.innerHTML = '<div class="small">押すと、その空港の近くの「よその空」へ行けます（離着陸の機体が低く通るので、キャッチしやすい場所です）</div>' +
+    AIRPORTS.map((a, i) => `<button data-i="${i}" style="font-size:13px">${esc(a[0])}</button>`).join('');
+  $('locBar').appendChild(al);
+  al.querySelectorAll('button').forEach(b => b.onclick = () => {
+    const a = AIRPORTS[+b.dataset.i];
+    if (sky) setSky(false);
+    yosoGo([a[3], a[4]], {name:a[0], ctry:a[1], cc:a[2]});
+  });
+  ab.onclick = () => { al.style.display = al.style.display === 'none' ? 'block' : 'none'; };
+}
+const locUiV22 = locUi;
+locUi = function () {
+  locUiV22();
+  const ab = $('airBtn'); if (!ab) return;
+  ab.style.display = pickMode ? 'none' : '';
+  if (pickMode) $('airList').style.display = 'none';
+};
+// --- よその空ノート：世界地図と「この空に行く」
+let yosoMap = null, yosoMapFit = false;
+{
+  const m = document.createElement('div'); m.id = 'yosoMap'; m.style.cssText = 'height:35vh;margin:8px 0;border-radius:6px';
+  $('yosoScore').after(m);
+}
+function yosoMapDraw() {
+  if (!yosoMap) return;
+  const ref = realHome()[0];
+  const fc = {type:'FeatureCollection', features:yoso.pl.map(e => ({type:'Feature', properties:{id:e.id, name:e.name || '（地名を調べ中）', n:e.n},
+    geometry:{type:'Point', coordinates:[wrapLon(e.p[0], ref), e.p[1]]}}))};
+  const put = () => {
+    if (!yosoMap.getSource('yp')) {
+      yosoMap.addSource('yp', {type:'geojson', data:fc});
+      yosoMap.addLayer({id:'yp', type:'circle', source:'yp', paint:{'circle-color':'#2e7d6b', 'circle-stroke-color':'#fff', 'circle-stroke-width':1.5,
+        'circle-radius':['interpolate', ['linear'], ['get', 'n'], 0, 5, 20, 8, 100, 12]}});
+      yosoMap.addLayer({id:'ypn', type:'symbol', source:'yp', layout:{'text-field':['get', 'name'], 'text-size':12, 'text-offset':[0, 1.1], 'text-anchor':'top'},
+        paint:{'text-color':'#1f4f45', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
+      yosoMap.on('click', 'yp', ev => {
+        const f = ev.features && ev.features[0], e = f && yoso.pl.find(x => x.id === f.properties.id);
+        if (e && confirm(`${yosoLabel(e)}の空に行きますか？`)) yosoGo(e.p);
+      });
+    } else yosoMap.getSource('yp').setData(fc);
+    if (yoso.pl.length && !yosoMapFit) {
+      yosoMapFit = true;
+      const b = new mapboxgl.LngLatBounds(fc.features[0].geometry.coordinates, fc.features[0].geometry.coordinates);
+      fc.features.forEach(f => b.extend(f.geometry.coordinates));
+      yosoMap.fitBounds(b, {padding:40, maxZoom:5, duration:0});
+    }
+  };
+  if (yosoMap.isStyleLoaded()) put(); else yosoMap.once('load', put);
+}
+window.yosoMapOff = () => { if (yosoMap) { yosoMap.remove(); yosoMap = null; } };
+const yosoBtnV23 = $('yosoBtn').onclick;
+$('yosoBtn').onclick = () => { yosoBtnV23(); yosoMapFit = false; renderYoso(); }; // 画面を開いてから地図を作る
+const renderYosoV24 = renderYoso;
+renderYoso = function () {
+  renderYosoV24();
+  if (!yosoMap && yosoIsOpen()) yosoMap = new mapboxgl.Map({container:'yosoMap', style:'mapbox://styles/mapbox/light-v11', center:[realHome()[0], 25], zoom:0.6});
+  yosoMapDraw();
+  $('yosoBody').querySelectorAll('.ycard').forEach(card => {
+    const e = yoso.pl.find(x => x.id === card.dataset.id); if (!e) return;
+    const b = document.createElement('button'); b.textContent = 'この空に行く'; b.style.cssText = 'float:right;font-size:13px;margin:0 0 4px 6px';
+    b.onclick = ev => { ev.stopPropagation(); if (sky) setSky(false); yosoGo(e.p); };
+    card.insertBefore(b, card.firstChild);
   });
 };
 locUi();

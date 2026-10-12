@@ -2139,6 +2139,143 @@ fetchRoutes = function (list) {
   return fetchRoutesV20(list);
 };
 
+// ---------- パソコンで開いたときと現在地の扱い（v22） ----------
+// (1) 向きのセンサーがない端末（パソコン）では「空に向ける」を開かずに知らせる
+// (2) 現在地の誤差が1kmを超えたら「粗い位置」として、真上カウントダウン・真上の知らせ・見た場所の地名を止める
+// (3) 現在地が取れないときは南大沢を仮の中心にせず、地図で場所を選んでもらう（選んだ場所は sora_pick に覚える）
+// (4) 記録は端末ごと、と説明に足す
+const ROUGH_M = 1000, JAPAN = [137.5, 37.0];
+const GEO_MSG = {1:'許可されていません。ブラウザの設定で位置情報を許可するか、「地図で場所を選ぶ」で場所を選んでください',
+  2:'現在地を取得できませんでした（電波や Wi-Fi の状態を確かめてください）', 3:'時間内に現在地が取れませんでした（しばらくして開き直してください）'};
+const okPt = v => Array.isArray(v) && v.length === 2 && v.every(x => typeof x === 'number' && isFinite(x));
+let posAcc = null, geoErr = '', lastGps = null, pickMode = false, pickCall = false;
+let pickPos = okPt(lsGet('sora_pick', null)) ? lsGet('sora_pick', null) : null;
+BK_SKIP.push('sora_pick'); // 地図で選んだ場所は端末ごとの設定なので、書き出しには入れない
+const isRough = () => !pickPos && !usingSaved && !usingDef && posAcc != null && posAcc > ROUGH_M;
+const posUnsure = () => !pickPos && (usingSaved || usingDef || isRough());
+const accKm = () => (posAcc / 1000).toFixed(posAcc < 10000 ? 1 : 0);
+// 位置情報の誤差（accuracy）を受け取り、エラーを日本語にする（起動処理の watchPosition の前に包む）
+try {
+  const geo = navigator.geolocation, wpBase = geo && geo.watchPosition && geo.watchPosition.bind(geo);
+  if (wpBase) geo.watchPosition = function (ok, ng, opt) {
+    return wpBase(g => {
+      posAcc = g.coords && typeof g.coords.accuracy === 'number' ? g.coords.accuracy : null;
+      geoErr = ''; lastGps = [g.coords.longitude, g.coords.latitude];
+      ok(g); locUi();
+    }, e => {
+      geoErr = GEO_MSG[e && e.code] || String((e && e.message) || '');
+      if (ng) ng({code:e && e.code, message:geoErr});
+      locUi(); if (pos) render();
+    }, opt);
+  };
+} catch (e) {}
+// 現在地の切り替え：地図で選んだ場所を使っている間は、現在地（GPS）が届いても切り替えない
+const setPosV21 = setPos;
+setPos = function (p, def, saved) {
+  if (pickCall) { setPosV21(p, false, false); locUi(); return; }
+  if (pickPos) { if (!pos) setPosV21(pickPos, false, false); locUi(); return; }
+  if (def) { if (!pos) { pickMode = true; map.jumpTo({center:JAPAN, zoom:4.3}); } locUi(); return; }
+  setPosV21(p, def, saved);
+  locUi();
+};
+// 現在地が分かるまでは、地図を日本全体にしておく
+if (!pickPos && !okPt(lsGet('sora_lastpos', null))) map.jumpTo({center:JAPAN, zoom:4.3});
+// 「地図で場所を選ぶ」の行（「〇機（半径30km）」の行の下）
+{
+  const bar = document.createElement('div');
+  bar.id = 'locBar'; bar.className = 'small';
+  bar.innerHTML = '<button id="pickBtn">地図で場所を選ぶ</button> <span id="locInfo"></span>';
+  $('head').after(bar);
+}
+function locUi() {
+  const b = $('pickBtn'), info = $('locInfo');
+  if (!b) return;
+  b.style.display = pickMode && !pos ? 'none' : '';
+  if (pickMode) {
+    b.textContent = '選ぶのをやめる';
+    info.textContent = '地図をタップして、空を見る場所を選んでください（拡大してから選ぶと正確です）';
+  } else if (pickPos) {
+    b.textContent = '現在地に戻す';
+    info.textContent = '地図で選んだ場所の空です（現在地は使っていません）';
+  } else {
+    b.textContent = '地図で場所を選ぶ';
+    info.textContent = isRough() ? `現在地の誤差が大きい（約${accKm()}km）ため、真上カウントダウンと真上の知らせを止めています。地図で場所を選ぶと正確にできます`
+      : usingSaved && geoErr ? '現在地が取れないため、前回の場所で表示しています（' + geoErr + '）' : '';
+  }
+  if (!pos) $('head').textContent = pickMode ? (geoErr ? '現在地が取れません。' : '') + '地図をタップして、空を見る場所を選んでください' : '現在地を取得中…';
+  try { map.getCanvas().style.cursor = pickMode ? 'crosshair' : ''; } catch (e) {}
+}
+map.on('click', e => {
+  if (!pickMode) return;
+  pickMode = false;
+  const p = [+e.lngLat.lng.toFixed(4), +e.lngLat.lat.toFixed(4)];
+  pickPos = p; lsSet('sora_pick', p);
+  pickCall = true;
+  try { setPos(p, false, false); } finally { pickCall = false; }
+  setTimeout(tick, busy ? 1500 : 0);
+});
+$('pickBtn').onclick = () => {
+  if (pickMode) { if (pos) { pickMode = false; locUi(); } return; }
+  if (pickPos) { // 現在地に戻す
+    pickPos = null;
+    try { localStorage.removeItem('sora_pick'); } catch (e) {}
+    if (lastGps) {
+      pickCall = true;
+      try { setPos(lastGps, false, false); } finally { pickCall = false; }
+      map.jumpTo({center:lastGps, zoom:9});
+    } else usingSaved = true; // 現在地が届いたら切り替わる
+    locUi(); render();
+    setTimeout(tick, busy ? 1500 : 0);
+    return;
+  }
+  if (sky) setSky(false);
+  pickMode = true; locUi();
+};
+// 「〇機（半径30km）」の行の注意書き
+const renderV17 = render;
+render = function () {
+  renderV17();
+  const note = pickPos ? '地図で選んだ場所' : isRough() ? `現在地の誤差 約${accKm()}km（真上の知らせは停止中）`
+    : usingSaved && geoErr ? '前回の場所で表示中（現在地が取れません）' : '';
+  if (note) $('head').textContent = $('head').textContent.replace(/　※.*$/, '') + '　※' + note;
+};
+// 粗い位置・前回の場所のときは、真上カウントダウンと真上通過の知らせを出さない（軍用機の知らせは続ける）
+const cdPickV18 = cdPick;
+cdPick = function (now) { return posUnsure() ? null : cdPickV18(now); };
+const notifyV18 = notify;
+notify = function (list) {
+  if (!posUnsure()) return notifyV18(list);
+  const el = $('ntfOver'), was = el.checked;
+  el.checked = false;
+  try { notifyV18(list); } finally { el.checked = was; }
+};
+// 粗い位置のときは、見た場所を「位置未確認」にまとめる（ずれた市区町村を記録しない）
+const spotForV8 = spotFor;
+spotFor = function (D, now) {
+  if (!isRough()) return spotForV8(D, now);
+  const b = usingSaved; usingSaved = true;
+  try { return spotForV8(D, now); } finally { usingSaved = b; }
+};
+// 向きのセンサーがない端末（主な操作がマウス）では「空に向ける」を開かない
+const noSensor = () => !gotOri && !(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+if (noSensor()) $('skyBtn').textContent = '空に向ける（スマホ用）';
+$('skyBtn').onclick = () => {
+  if (!sky && noSensor()) {
+    alertMsg('「空に向ける」はスマホで開くと使えます（向きのセンサーが必要です）。キャッチ・星座を探す・方角合わせも、この画面の機能です', null, false);
+    $('toast').classList.add('con');
+    return;
+  }
+  setSky(!sky);
+};
+// 記録は端末ごと
+const bkInfoV20 = bkInfo;
+bkInfo = function () {
+  bkInfoV20();
+  $('bkInfo').innerHTML += '<br>記録はこの端末のこのブラウザの中にあります。パソコンとスマホでは別々です';
+};
+bkInfo();
+locUi();
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

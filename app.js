@@ -241,6 +241,7 @@ async function tick() {
 
 // ---------- 行き先（スマホに覚えておく） ----------
 const ROUTE_DAYS = 30, NONE_HOURS = 12;
+const routeWait = new Map(); // v27：調べられなかった便 → もう一度調べてよい時刻（2分あと）
 function routeEntry(cs) {
   const r = cs && routes[cs];
   if (!r) return null;
@@ -260,7 +261,7 @@ const apConv = a => ({iata:a.iata_code || '', name:a.name || '', loc:a.municipal
   lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3), cc:a.country_iso_name || ''});
 async function fetchRoutes(list) {
   if (routeBusy) return false;
-  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)).map(p => p.cs))].slice(0, 10);
+  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs) && !((routeWait.get(p.cs) || 0) > Date.now())).map(p => p.cs))].slice(0, 10);
   if (!need.length) return false;
   routeBusy = true;
   try {
@@ -272,10 +273,11 @@ async function fetchRoutes(list) {
       const fr = j[cs];
       if (fr && fr.origin && fr.destination) routes[cs] = {t:now, a:[apConv(fr.origin), apConv(fr.destination)]};
       else if (!fr) routes[cs] = {t:now, none:1};
+      else routeWait.set(cs, now + 120000); // 中継が調べられなかった便は2分あとに回す（v27）
     });
     saveRoutes();
     return true;
-  } catch (e) { showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
+  } catch (e) { need.forEach(cs => routeWait.set(cs, Date.now() + 120000)); showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
   finally { routeBusy = false; }
 }
 function apName(ap) { return JA_AP[ap.iata] || ap.loc || ap.name || ap.iata || '?'; }
@@ -2874,6 +2876,26 @@ renderYoso = function () {
 // 「記録を消す」（v24）は線も消す
 const yosoResetV24 = $('yosoReset').onclick;
 $('yosoReset').onclick = () => { yosoResetV24(); if (!yoso.rt) { yoso.rt = {}; yoso.rtSeen = {}; yosoSave(); renderYoso(); } };
+
+// ---------- 行き先の調べ方の改善（v27） ----------
+// 調べられなかった便は2分あとに回す（routeWait。fetchRoutes の中を直した）。よその空では10秒に20機（10機ずつ2回）調べる
+// 「更新 〇時〇分」の行に、行き先を待っている機体の数を出す
+const fetchRoutesV26 = fetchRoutes;
+fetchRoutes = async function (list) {
+  const a = await fetchRoutesV26(list);
+  if (!viewOnly()) return a;
+  const b = await fetchRoutesV26(list);
+  return a || b;
+};
+{
+  const sp = document.createElement('span'); sp.id = 'rtWait';
+  $('upd').after(sp);
+}
+function rtWaitShow() {
+  const n = new Set(planes.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs || '') && !routeEntry(p.cs)).map(p => p.cs)).size;
+  $('rtWait').textContent = n ? `　行き先を調べ中 ${n}機` : '';
+}
+setInterval(() => { if (!document.hidden) rtWaitShow(); }, 2000);
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

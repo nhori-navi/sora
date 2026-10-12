@@ -1988,6 +1988,50 @@ renderDay = function (k) {
   $('dayBody').insertBefore(el, sp || null);
 };
 
+// ---------- iPhone対応（v19） ----------
+// iPhone（Safari・Chromeとも）は、向きのセンサーを使う前に、ボタンを押したその場で許可を求める決まりがある
+const SKY_HINT = 'スマホを写真を撮るように機体へ向けてください。照準の機体をタップで詳細';
+const oriDeniedText = '向きのセンサーが許可されていないため、空に向ける画面が使えません。このページを閉じて開き直し、もう一度「空に向ける」を押して「許可」を選んでください';
+let oriPerm = ''; // ''＝まだ聞いていない、'asking'＝確認中、'granted'＝許可、'denied'＝不許可
+const needOriPerm = () => typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+function askOri() {
+  if (!needOriPerm() || oriPerm === 'granted' || oriPerm === 'asking') return;
+  oriPerm = 'asking';
+  $('skyInfo').textContent = '「動作と方向」へのアクセスを「許可」してください';
+  DeviceOrientationEvent.requestPermission().then(r => {
+    oriPerm = r === 'granted' ? 'granted' : 'denied';
+    $('skyInfo').textContent = oriPerm === 'granted' ? SKY_HINT : oriDeniedText;
+  }).catch(e => { oriPerm = 'denied'; $('skyInfo').textContent = oriDeniedText; });
+}
+// 「空に向ける」を押したとき（ボタンを押したその場で聞く必要があるので、画面の切り替えより先に聞く）
+const setSkyV13 = setSky;
+setSky = function (on) {
+  if (on && !sky) askOri();
+  setSkyV13(on);
+  // 確認中・不許可のときは「この端末では方位センサーが使えないようです」を出さない
+  if (on && needOriPerm()) setTimeout(() => { if (sky && oriPerm !== 'granted' && !gotOri) $('skyInfo').textContent = oriPerm === 'denied' ? oriDeniedText : '「動作と方向」へのアクセスを「許可」してください'; }, 1600);
+};
+// 許可されなかったときは、空の画面にも理由を出す（黙って止まらないように）
+const drawScopeBase = drawScope;
+drawScope = function () {
+  drawScopeBase();
+  // 向きの値が届いたら「使えないようです」の表示を元に戻す（許可の確認に時間がかかったとき）
+  if (gotOri && $('skyInfo').textContent === 'この端末では方位センサーが使えないようです') $('skyInfo').textContent = SKY_HINT;
+  if (head != null || !needOriPerm() || oriPerm === 'granted') return;
+  const c = $('scope'), box = $('scopeBox'), g = c.getContext('2d'), W = box.clientWidth, H = box.clientHeight;
+  g.save(); g.shadowBlur = 0;
+  g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, W, 150);
+  g.fillStyle = '#fff'; g.font = '14px sans-serif'; g.textAlign = 'left';
+  if (oriPerm === 'denied') {
+    g.fillStyle = '#ffb3a7'; g.fillText('向きのセンサーが許可されていません', 10, 96);
+    g.fillStyle = '#fff'; g.fillText('ページを開き直して、もう一度', 10, 118); g.fillText('「空に向ける」を押し「許可」を選んでください', 10, 140);
+  } else {
+    g.fillText('「動作と方向」へのアクセスを確認しています…', 10, 96);
+    g.fillText('確認の画面が出たら「許可」を選んでください', 10, 118);
+  }
+  g.restore();
+};
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

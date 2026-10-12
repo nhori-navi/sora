@@ -1245,7 +1245,7 @@ const CATCH_MS = 2000, CATCH_GAP = 500, CATCH_R = 10, CATCH_MIN_ELEV = 10, CATCH
 let catchData = lsGet('sora_catch_v1', null);
 if (!catchData || !catchData.types || !catchData.seen || !Array.isArray(catchData.log)) catchData = {types:{}, seen:{}, log:[], total:0};
 let catchT = null;
-const caughtToday = hex => !!catchData.seen[hex + '|' + today()];
+let caughtToday = hex => !!catchData.seen[hex + '|' + today()]; // v24 でよその空のときに切り替える
 function catchStep(g, toXY, off) {
   const now = Date.now();
   // 今日キャッチ済みの機体には印を付ける
@@ -2145,7 +2145,7 @@ fetchRoutes = function (list) {
 // (3) 現在地が取れないときは南大沢を仮の中心にせず、地図で場所を選んでもらう（選んだ場所は sora_pick に覚える）
 // (4) 記録は端末ごと、と説明に足す
 // (5) 地図で選んだ場所が、いる場所（現在地）から離れているとき・現在地が分からないときは「よその空」：
-//     図鑑・都市・今日の空・バッジに数えず（よその空ノートに記録＝v23）、「空に向ける」も開かない
+//     図鑑・都市・今日の空・バッジに数えず（よその空ノートに記録＝v23）。真上カウントダウンと真上の知らせも出さない（v24）
 const ROUGH_M = 1000, JAPAN = [137.5, 37.0];
 const GEO_MSG = {1:'許可されていません。ブラウザの設定で位置情報を許可するか、「よその空に行く」で場所を選んでください',
   2:'現在地を取得できませんでした（電波や Wi-Fi の状態を確かめてください）', 3:'時間内に現在地が取れませんでした（しばらくして開き直してください）'};
@@ -2154,7 +2154,7 @@ let posAcc = null, geoErr = '', lastGps = null, pickMode = false, pickCall = fal
 let pickPos = okPt(lsGet('sora_pick', null)) ? lsGet('sora_pick', null) : null;
 BK_SKIP.push('sora_pick'); // 地図で選んだ場所は端末ごとの設定なので、書き出しには入れない
 const isRough = () => !pickPos && !usingSaved && !usingDef && posAcc != null && posAcc > ROUGH_M;
-const posUnsure = () => !pickPos && (usingSaved || usingDef || isRough());
+const posUnsure = () => viewOnly() || (!pickPos && (usingSaved || usingDef || isRough()));
 const accKm = () => (posAcc / 1000).toFixed(posAcc < 10000 ? 1 : 0);
 // 地図で選んだ場所が現在地の近く（誤差の範囲内、少なくとも5km以内）なら記録する。離れている・現在地が分からないなら「よその空」
 const viewOnly = () => !!pickPos && !(lastGps && gcKm(pickPos, lastGps) <= Math.max(5, (posAcc || 0) / 1000));
@@ -2206,7 +2206,7 @@ function locUi() {
     b.textContent = '別の場所へ';
     info.textContent = viewOnly() && !lastGps && !geoErr ? 'よその空かどうか、現在地を確認しています（確認できるまで記録しません）'
       : viewOnly() ? 'よその空です。' + (lastGps ? 'いる場所から離れている' : '現在地が分からない')
-      + 'ので、図鑑・都市・今日の空・バッジには数えず、「よその空ノート」に記録します（「空に向ける」は使えません）'
+      + 'ので、いつもの図鑑・都市・今日の空・バッジには数えず、「よその空ノート」に記録します（空に向けると、その場所の空でキャッチできます）'
       + (lastGps ? '' : '。位置情報を許可して、今いる場所の近くを選ぶと、いつもの記録になります')
       : '地図で選んだ場所の空です（今いる場所の近くなので、いつもどおり記録します）';
   } else {
@@ -2273,11 +2273,6 @@ spotFor = function (D, now) {
 const noSensor = () => !gotOri && !(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 if (noSensor()) $('skyBtn').textContent = '空に向ける（スマホ用）';
 $('skyBtn').onclick = () => {
-  if (!sky && viewOnly()) {
-    alertMsg('よその空では「空に向ける」は使えません（その場所にいないため）。「現在地に戻す」を押すと使えます', null, false);
-    $('toast').classList.add('con');
-    return;
-  }
   if (!sky && noSensor()) {
     alertMsg('「空に向ける」はスマホで開くと使えます（向きのセンサーが必要です）。キャッチ・星座を探す・方角合わせも、この画面の機能です', null, false);
     $('toast').classList.add('con');
@@ -2443,6 +2438,169 @@ bkSummary = function (o) {
 };
 // よその空を選んだまま開き直したときは、現在地を待たずにその場所で始める（記録は現在地が分かってから）
 if (pickPos && !pos) { pickCall = true; try { setPos(pickPos, false, false); } finally { pickCall = false; } }
+locUi();
+
+// ---------- よその空で空に向ける・よその空スコア（v24） ----------
+// よその空でも「空に向ける」を使える（その場所に立って同じ方向を向いたつもり。カメラは景色が合わないので使わない）
+// キャッチ・宇宙ステーション・星座を探すは、いつもの記録には書かず、よその空ノートに記録する。点は「よその空スコア」として別に数える
+if (!yoso.cat || !yoso.cat.seen) yoso.cat = {seen:{}, types:{}, day:{}, total:0, best:null};
+yoso.pl.forEach(e => { e.cn = e.cn || 0; e.pt = e.pt || 0; e.log = e.log || []; e.con = e.con || []; });
+const YOSO_LOG = 20;
+const yosoPlaceV23 = yosoPlace;
+yosoPlace = function () {
+  const e = yosoPlaceV23();
+  if (e) { e.cn = e.cn || 0; e.pt = e.pt || 0; e.log = e.log || []; e.con = e.con || []; }
+  return e;
+};
+$('yosoReset').onclick = () => {
+  if (!confirm('よその空ノートの記録（よその空スコアも）をすべて消します。いつもの記録は残ります。よろしいですか？')) return;
+  yoso = {pl:[], types:{}, seen:{}, cat:{seen:{}, types:{}, day:{}, total:0, best:null}}; yosoCur = null; yosoSave(); renderYoso(); locUi();
+};
+const yosoCaught = hex => !!yoso.cat.seen[hex + '|' + today()];
+// 「今日キャッチ済み」かどうか：よその空ではよその空の記録で見る（現在地を確認している間は、どれもキャッチしない）
+const caughtTodayV12 = caughtToday;
+caughtToday = hex => viewOnly() ? (!yosoOn() || yosoCaught(hex)) : caughtTodayV12(hex);
+// レア度：よその空では、よその空ノートでその機種を見た回数で決める（段階と点はいつもと同じ）
+const rarityOfV13 = rarityOf;
+rarityOf = function (code) {
+  if (!viewOnly()) return rarityOfV13(code);
+  if (!code || code === '?') return RARITY[3];
+  const n = (yoso.types[code] && yoso.types[code].n) || 0;
+  return RARITY.find(r => n <= r[0]);
+};
+function yosoDayScore(pt) {
+  const d = today(), c = yoso.cat;
+  c.day[d] = (c.day[d] || 0) + pt;
+  const cut = ymd(new Date(Date.now() - 30 * 86400000));
+  Object.keys(c.day).forEach(k => { if (k < cut) delete c.day[k]; });
+  if (!c.best || c.day[d] > c.best.pt) c.best = {pt:c.day[d], d};
+  return c.day[d];
+}
+function yosoCatchRec(e, rec, pt) {
+  const d = today();
+  yoso.cat.seen[rec.hex + '|' + d] = 1;
+  for (const k in yoso.cat.seen) if (!k.endsWith('|' + d)) delete yoso.cat.seen[k];
+  yoso.cat.total = (yoso.cat.total || 0) + 1;
+  e.cn++; e.pt += pt;
+  e.log.unshift(rec); e.log.splice(YOSO_LOG);
+  const total = yosoDayScore(pt);
+  yosoSave();
+  if (yosoIsOpen()) renderYoso();
+  return total;
+}
+// 機体のキャッチ（いつもの doCatch の代わり）
+function yosoCatch(p, now) {
+  const e = yosoPlace(); if (!e) return;
+  const code = p.type || '?', rar = rarityOf(code), parts = [], add = (t, v) => { parts.push(`${t}+${v}`); return v; };
+  let pt = rar[2];
+  if (p.mil) pt += add('軍用機', 50);
+  if (code !== '?' && !yoso.cat.types[code]) pt += add('よその空で初めての機種', 50);
+  if (code !== '?' && !zukan.types[code]) pt += add('★自分の空でまだ', 30);
+  if (p.sun) pt += add(p.sun.kind, 30);
+  if (p.elev >= 70) pt += add('真上', 20);
+  if (code !== '?') yoso.cat.types[code] = (yoso.cat.types[code] || 0) + 1;
+  const ri = routeInfo(p);
+  const total = yosoCatchRec(e, {t:now, hex:p.hex, cs:p.cs || p.reg, ty:code, mil:p.mil ? 1 : 0, route:ri ? ri.text : '', pt, rar:rar[1]}, pt);
+  const who = [typeName(p), p.cs || p.reg].filter(Boolean).join(' ') + (ri ? ' ' + ri.text : '');
+  alertMsg(`よその空でキャッチ！ ${yosoLabel(e)}　${rar[1]} ${who}　+${pt}点${parts.length ? '（' + parts.join('・') + '）' : ''}　今日のよその空 ${total}点`, p.hex, true);
+  $('toast').classList.add('catch');
+  try { if (navigator.vibrate) navigator.vibrate(p.mil ? [80, 60, 80, 60, 240] : [80, 60, 160]); } catch (er) {}
+}
+const doCatchV17 = doCatch;
+doCatch = function (p, now) {
+  if (!viewOnly()) return doCatchV17(p, now);
+  if (yosoOn()) yosoCatch(p, now);
+};
+// 宇宙ステーションのキャッチ（よその空では、よその空の記録に。1日1回100点）
+const issCatchStepV13 = issCatchStep;
+issCatchStep = function (g, toXY, off) {
+  if (!viewOnly()) return issCatchStepV13(g, toXY, off);
+  const now = Date.now();
+  if (!yosoOn() || !issNow || yosoCaught('ISS') || elevNow < CATCH_MIN_AIM || issNow.el < CATCH_MIN_ELEV || !issVisible(issNow, new Date(now))) { issCT = null; return; }
+  const inR = angSep(head, elevNow, issNow.az, issNow.el) <= CATCH_R;
+  if (inR) { if (!issCT) issCT = {t0:now, lastIn:now}; issCT.lastIn = now; }
+  else if (issCT && now - issCT.lastIn > CATCH_GAP) issCT = null;
+  if (!issCT) return;
+  const k = Math.min(1, (now - issCT.t0) / CATCH_MS), [x, y] = toXY(issNow.az, issNow.el);
+  if (!off(x, y)) {
+    g.strokeStyle = 'rgba(76,255,154,.35)'; g.lineWidth = 5; g.beginPath(); g.arc(x, y, 22, 0, 7); g.stroke();
+    g.strokeStyle = '#4cff9a'; g.beginPath(); g.arc(x, y, 22, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); g.stroke();
+  }
+  if (k < 1 || !inR) return;
+  issCT = null;
+  const e = yosoPlace(); if (!e) return;
+  const total = yosoCatchRec(e, {t:now, hex:'ISS', cs:'ISS', ty:'ISS', mil:0, route:'', pt:ISS_PT, rar:'宇宙'}, ISS_PT);
+  alertMsg(`よその空で宇宙ステーションをキャッチ！ ${yosoLabel(e)}　+${ISS_PT}点　今日のよその空 ${total}点`, null, true);
+  $('toast').classList.add('catch');
+  try { if (navigator.vibrate) navigator.vibrate([80, 60, 80, 60, 80, 60, 300]); } catch (er) {}
+};
+// 星座を探す：よその空では、見つけた星座をその場所の記録に残す（いつもの今日の空には入れない）
+const conFoundAtV18 = conFoundAt;
+conFoundAt = function (id, now) {
+  if (!viewOnly()) return conFoundAtV18(id, now);
+  const e = yosoOn() && yosoPlace();
+  return e ? e.con.find(x => x.id === id && now - x.t < 12 * 3600000) || null : null;
+};
+const conFoundV18 = conFound;
+conFound = function (c, now) {
+  if (!viewOnly()) return conFoundV18(c, now);
+  conHold = null;
+  const e = yosoOn() && yosoPlace();
+  if (!e || conFoundAt(c.id, now)) return;
+  e.con.push({id:c.id, name:c.name, t:now}); e.con.splice(0, Math.max(0, e.con.length - 50));
+  yosoSave();
+  const n = e.con.filter(x => now - x.t < 12 * 3600000).length;
+  alertMsg(`${yosoLabel(e)}の空で星座を見つけた！ ${c.name}　今夜${n}つめ`, null, false);
+  $('toast').classList.add('con');
+  if (yosoIsOpen()) renderYoso();
+};
+// カメラ：よその空では使わない（映るのは今いる場所の景色なので）
+const startCamV11 = startCam;
+startCam = function () {
+  if (!viewOnly()) return startCamV11();
+  $('skyInfo').textContent = 'よその空ではカメラは使えません（映るのは今いる場所の景色なので、よその空とは合いません）';
+};
+// 空の画面：上に「よその空：ロンドン（イギリス）」。よその空に切り替わったらカメラを止める
+const drawScopeV19 = drawScope;
+drawScope = function () {
+  if (viewOnly() && camOn) stopCam();
+  drawScopeV19();
+  if (!viewOnly() || head == null) return;
+  const c = $('scope'), box = $('scopeBox'), g = c.getContext('2d'), W = box.clientWidth;
+  const e = yosoOn() && yosoPlace();
+  g.save(); g.shadowBlur = 0; g.font = 'bold 13px sans-serif'; g.textAlign = 'right'; g.fillStyle = '#9fe0cf';
+  g.fillText(fitText(g, 'よその空：' + (e ? yosoLabel(e) : '現在地を確認中'), Math.max(80, W - 200)), W - 8, 17);
+  g.restore();
+};
+const skyBtnV22 = $('skyBtn').onclick;
+$('skyBtn').onclick = () => {
+  skyBtnV22();
+  if (sky && viewOnly()) $('skyInfo').textContent = 'よその空です。その場所に立って同じ方向を向いたつもりで、スマホを空に向けてください。キャッチの点は「よその空スコア」になります';
+  else if (sky && /^よその空/.test($('skyInfo').textContent)) $('skyInfo').textContent = SKY_HINT;
+};
+// よその空ノートの画面：スコアと、場所ごとのキャッチ・見つけた星座
+{
+  const sc = document.createElement('div'); sc.id = 'yosoScore'; sc.className = 'drow';
+  $('yosoBody').before(sc);
+}
+const renderYosoV23 = renderYoso;
+renderYoso = function () {
+  renderYosoV23();
+  const c = yoso.cat, td = c.day[today()] || 0, b = c.best;
+  $('yosoScore').innerHTML = `<b>今日のよその空スコア ${td}点</b>` + (b ? `<span class="small">（自己ベスト ${b.pt}点・${b.d.slice(5).replace('-', '/')}）</span>` : '') +
+    `<br><span class="small">キャッチ通算 ${c.total || 0}機。よその空で空に向けて、照準の円に機体を2秒入れるとキャッチ（いつものスコアとは別）</span>`;
+  $('yosoBody').querySelectorAll('.ycard').forEach(card => {
+    const e = yoso.pl.find(x => x.id === card.dataset.id); if (!e) return;
+    const sm = card.querySelector('.small');
+    if (sm && (e.cn || e.con.length)) sm.innerHTML += `・キャッチ ${e.cn}機・${e.pt}点` + (e.con.length ? `・星座 ${new Set(e.con.map(x => x.id)).size}` : '');
+    if (yosoOpenId !== e.id) return;
+    const det = document.createElement('div'); det.className = 'small'; det.style.cssText = 'margin-top:4px;color:#333';
+    const cl = e.log.slice(0, 10).map(r => `${hm(r.t)} ${r.mil ? '<b style="color:#c0392b">軍</b> ' : ''}${r.ty === 'ISS' ? '宇宙ステーション' : esc((r.cs || '') + ' ' + tyName(r.ty))} <b>${r.rar && r.rar !== '宇宙' ? esc(r.rar) + ' ' : ''}+${r.pt}</b>`);
+    const cons = [...new Set(e.con.map(x => x.name))];
+    det.innerHTML = (cl.length ? `キャッチ：<br>${cl.join('<br>')}` : 'キャッチ：まだありません') + (cons.length ? `<br>見つけた星座：${esc(cons.join('、'))}` : '');
+    card.appendChild(det);
+  });
+};
 locUi();
 
 const savedPos = lsGet('sora_lastpos', null);

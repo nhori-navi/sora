@@ -985,7 +985,7 @@ function drawCitiesMap(rows) {
 }
 $('citiesBtn').onclick = () => {
   $('cities').style.display = 'block';
-  if (!citiesMap) citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5});
+  if (!citiesMap) citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5, projection:'globe'});
   renderCities();
 };
 $('citiesClose').onclick = () => {
@@ -995,7 +995,7 @@ $('citiesClose').onclick = () => {
 $('citiesReset').onclick = () => {
   if (!confirm('この空から行った都市の記録をすべて消します。よろしいですか？')) return;
   cities = {list:{}, seen:{}}; lsSet('sora_cities_v1', cities);
-  if (citiesMap) { citiesMap.remove(); citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5}); }
+  if (citiesMap) { citiesMap.remove(); citiesMap = new mapboxgl.Map({container:'citiesMap', style:'mapbox://styles/mapbox/light-v11', center:realHome(), zoom:1.5, projection:'globe'}); }
   renderCities();
 };
 
@@ -2608,7 +2608,7 @@ locUi();
 // (1) 「本当の現在地」：よその空にいても、距離・バッジ・シェアカードの方向は、最後に分かった現在地から測る
 // (2) 都市の地図の線は、記録した便の「出発地→行き先」で引く（v25 から出発地も記録。それより前の記録は行き先の点だけ）
 // (3) 世界の空港ボタンで、有名な空港の近くの空へひと押しで行ける
-// (4) よその空ノートに世界地図と「この空に行く」ボタン
+// (4) よその空ノートに世界地図（v26 から地球儀）と「この空に行く」ボタン
 realHome = () => {
   if (pickPos && !viewOnly()) return pickPos; // 今いる場所の近くを地図で選び直したとき
   const last = lsGet('sora_lastpos', null);
@@ -2647,6 +2647,12 @@ drawCitiesMap = function (rows) {
     lines.push({type:'Feature', properties:{n:e.n}, geometry:{type:'LineString', coordinates:gcLine(o, [c.lon, c.lat])}});
     origins.set(e.o.name, o);
   });
+  // 出発地が分からない都市（v25 より前の記録など）は、今いる空から行き先へ線を引く（「線を消す」より前の都市は引かない）
+  const withRt = new Set(rt.map(e => e.d));
+  rows.forEach(r => {
+    if (withRt.has(r.id) || cities.lineCut) return; // 「線を消す」のあとは、出発地が分かる便の線だけ
+    lines.push({type:'Feature', properties:{n:r.n}, geometry:{type:'LineString', coordinates:gcLine(home, [r.lon, r.lat])}});
+  });
   const pts = rows.map(r => ({type:'Feature', properties:{name:r.name, n:r.n}, geometry:{type:'Point', coordinates:[wrapLon(r.lon, ref), r.lat]}}));
   const ors = [...origins].filter(([nm]) => !rows.some(r => r.name === nm)).map(([nm, p]) => ({type:'Feature', properties:{name:nm}, geometry:{type:'Point', coordinates:p}}));
   const put = () => {
@@ -2677,8 +2683,17 @@ const renderCitiesV8 = renderCities;
 renderCities = function () {
   renderCitiesV8();
   const n = Object.keys(cities.rt || {}).length;
-  if (Object.keys(cities.list).length) $('citiesSum').textContent += `　（地図の線：出発地→行き先 ${n}路線）`;
+  if (Object.keys(cities.list).length) $('citiesSum').textContent += `　（出発地が分かる路線 ${n}）`;
 };
+// 都市の画面に「線を消す」（記録は残し、地図の線だけを消して描き直していく）
+{
+  const b = document.createElement('button'); b.id = 'citiesLineReset'; b.className = 'reset'; b.textContent = '線を消す';
+  $('citiesReset').after(b);
+  b.onclick = () => {
+    if (!confirm('都市の地図の線をすべて消します（都市の記録と表は残ります）。これから記録した便の線がまた描かれていきます。よろしいですか？')) return;
+    cities.rt = {}; cities.lineCut = today(); lsSet('sora_cities_v1', cities); renderCities();
+  };
+}
 // --- 世界の空港（押すと、その空港の近くのよその空へ）
 const AIRPORTS = [ // [名前, 国, 国の記号, 経度, 緯度]
   ['羽田空港', '日本', 'JP', 139.781, 35.553], ['成田空港', '日本', 'JP', 140.393, 35.772], ['関西空港', '日本', 'JP', 135.244, 34.434],
@@ -2768,7 +2783,7 @@ $('yosoBtn').onclick = () => { yosoBtnV23(); yosoMapFit = false; renderYoso(); }
 const renderYosoV24 = renderYoso;
 renderYoso = function () {
   renderYosoV24();
-  if (!yosoMap && yosoIsOpen()) yosoMap = new mapboxgl.Map({container:'yosoMap', style:'mapbox://styles/mapbox/light-v11', center:[realHome()[0], 25], zoom:0.6});
+  if (!yosoMap && yosoIsOpen()) yosoMap = new mapboxgl.Map({container:'yosoMap', style:'mapbox://styles/mapbox/light-v11', center:[realHome()[0], 25], zoom:0.6, projection:'globe'});
   yosoMapDraw();
   $('yosoBody').querySelectorAll('.ycard').forEach(card => {
     const e = yoso.pl.find(x => x.id === card.dataset.id); if (!e) return;
@@ -2778,6 +2793,87 @@ renderYoso = function () {
   });
 };
 locUi();
+
+// ---------- 地球儀と、よその空の路線の線（v26） ----------
+// よその空で見た機体のうち、出発地と行き先が分かった便を、よその空ノートの地球儀に「出発地→行き先」の線で描く
+// 同じ組み合わせは1本だけ（見た回数で少し太く）。「線を消す」で線だけ消せる（場所やスコアの記録は残る）
+const YRT_MAX = 400;
+if (!yoso.rt) yoso.rt = {};
+if (!yoso.rtSeen) yoso.rtSeen = {};
+function yosoRoutes(list) {
+  if (!yosoOn()) return;
+  const d = today(), now = Date.now();
+  let changed = false;
+  list.forEach(p => {
+    if (p.ground || p.mil || !p.cs) return;
+    const r = routeEntry(p.cs);
+    if (!r || r.none || !r.a || r.a.length < 2) return;
+    const sk = p.hex + '|' + d;
+    if (yoso.rtSeen[sk]) return;
+    yoso.rtSeen[sk] = d;
+    const o = r.a[0], a = r.a[1], key = (o.iata || o.name) + '>' + (a.iata || a.name);
+    const e = yoso.rt[key] || (yoso.rt[key] = {o:{name:apName(o), lat:o.lat, lon:o.lon}, d:{name:apName(a), lat:a.lat, lon:a.lon}, n:0, first:d});
+    e.n++; e.last = d; e.t = now; changed = true;
+  });
+  if (!changed) return;
+  for (const k in yoso.rtSeen) if (yoso.rtSeen[k] !== d) delete yoso.rtSeen[k];
+  const ks = Object.keys(yoso.rt);
+  if (ks.length > YRT_MAX) ks.sort((x, y) => (yoso.rt[x].t || 0) - (yoso.rt[y].t || 0)).slice(0, ks.length - YRT_MAX).forEach(k => delete yoso.rt[k]);
+  yosoSave();
+  if (yosoIsOpen()) yosoMapDraw();
+}
+// 行き先は記録のあとに届くので、行き先を調べ終わったときにも線を足す
+const fetchRoutesV21 = fetchRoutes;
+fetchRoutes = function (list) {
+  const r = fetchRoutesV21(list);
+  Promise.resolve(r).then(ch => { if (ch) yosoRoutes(planes); });
+  return r;
+};
+const recordV23 = record;
+record = function (list) { recordV23(list); yosoRoutes(list); };
+// 地球儀に線と空港の点を描く
+const yosoMapDrawV25 = yosoMapDraw;
+yosoMapDraw = function () {
+  yosoMapDrawV25();
+  if (!yosoMap) return;
+  const rts = Object.values(yoso.rt || {}), aps = new Map();
+  const lines = rts.map(e => {
+    aps.set(e.o.name, [e.o.lon, e.o.lat]); aps.set(e.d.name, [e.d.lon, e.d.lat]);
+    return {type:'Feature', properties:{n:e.n}, geometry:{type:'LineString', coordinates:gcLine([e.o.lon, e.o.lat], [e.d.lon, e.d.lat])}};
+  });
+  const fc = f => ({type:'FeatureCollection', features:f});
+  const apf = fc([...aps].map(([name, p]) => ({type:'Feature', properties:{name}, geometry:{type:'Point', coordinates:p}})));
+  const put = () => {
+    if (!yosoMap.getSource('yr')) {
+      yosoMap.addSource('yr', {type:'geojson', data:fc(lines)});
+      yosoMap.addLayer({id:'yr', type:'line', source:'yr', paint:{'line-color':'#e67e22', 'line-opacity':0.75,
+        'line-width':['interpolate', ['linear'], ['get', 'n'], 1, 1.2, 5, 2.5, 20, 4]}}, 'yp');
+      yosoMap.addSource('ya', {type:'geojson', data:apf});
+      yosoMap.addLayer({id:'ya', type:'circle', source:'ya', paint:{'circle-color':'#c0392b', 'circle-radius':2.5, 'circle-stroke-color':'#fff', 'circle-stroke-width':0.8}}, 'yp');
+      yosoMap.addLayer({id:'yan', type:'symbol', source:'ya', minzoom:2.5, layout:{'text-field':['get', 'name'], 'text-size':11, 'text-offset':[0, 0.9], 'text-anchor':'top'},
+        paint:{'text-color':'#7a3b12', 'text-halo-color':'#fff', 'text-halo-width':1.2}});
+    } else { yosoMap.getSource('yr').setData(fc(lines)); yosoMap.getSource('ya').setData(apf); }
+  };
+  if (yosoMap.getSource('yp')) put(); else yosoMap.once('load', () => setTimeout(put, 0));
+};
+// よその空ノート：線の数と「線を消す」
+const renderYosoV25 = renderYoso;
+renderYoso = function () {
+  renderYosoV25();
+  const n = Object.keys(yoso.rt || {}).length;
+  $('yosoScore').innerHTML += `<br><span class="small">地球儀の線：よその空で見た便の出発地→行き先 ${n}路線（同じ路線は1本）</span>`;
+};
+{
+  const b = document.createElement('button'); b.id = 'yosoLineReset'; b.className = 'reset'; b.textContent = '線を消す';
+  $('yosoReset').after(b);
+  b.onclick = () => {
+    if (!confirm('地球儀の線をすべて消します（よその空の場所やスコアの記録は残ります）。よろしいですか？')) return;
+    yoso.rt = {}; yoso.rtSeen = {}; yosoSave(); renderYoso();
+  };
+}
+// 「記録を消す」（v24）は線も消す
+const yosoResetV24 = $('yosoReset').onclick;
+$('yosoReset').onclick = () => { yosoResetV24(); if (!yoso.rt) { yoso.rt = {}; yoso.rtSeen = {}; yosoSave(); renderYoso(); } };
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

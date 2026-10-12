@@ -121,7 +121,7 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div id="citiesSum" style="margin-top:6px;font-weight:bold"></div>
   <div id="citiesMap"></div>
   <table><thead><tr><th>都市</th><th>回数</th><th>初めて</th><th>距離</th></tr></thead><tbody id="citiesBody"></tbody></table>
-  <div class="small" style="margin-top:8px">近く（10km以内）を通った旅客機の行き先を、同じ便は1日1回だけ数えます。地図の線は、その便の出発地→行き先です（2026年10月12日の更新より前の記録は、行き先の点だけです）。距離は、よその空にいても今いる場所から測ります。</div>
+  <div class="small" style="margin-top:8px">近く（10km以内）を通った旅客機の行き先を、同じ便は1日1回だけ数えます。地図の線は、出発地が分かる便は出発地→行き先、分からない都市（前からの記録）は今いる空→行き先です。同じ路線は1本だけ。「線を消す」で線だけを消して描き直せます。距離は、よその空にいても今いる場所から測ります。</div>
 </div>
 <div id="share">
   <button id="shareClose">閉じる</button> <b>シェアカード</b>
@@ -174,9 +174,9 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=25"></script>
-<script src="data.js?v=25"></script>
-<script src="constellations.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="config.js?v=26"></script>
+<script src="data.js?v=26"></script>
+<script src="constellations.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

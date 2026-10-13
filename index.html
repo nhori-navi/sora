@@ -61,7 +61,9 @@ label{white-space:nowrap;margin-right:6px}
 #detail img{width:100%;max-height:230px;object-fit:cover;border-radius:4px;display:block;margin-top:4px}
 #toast{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;background:#c0392b;color:#fff;padding:10px 16px;border-radius:8px;font-size:16px;font-weight:bold;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:92%;text-align:center;cursor:pointer}
 #zukan,#cities,#day{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;background:#fff;overflow:auto;padding:12px}
-#citiesMap{height:45vh;margin-top:8px;border-radius:6px}
+#citiesMap{height:45vh;margin-top:8px;border-radius:6px;clear:both}
+#yosoMap{clear:both}
+#citiesSum,#yosoScore{clear:both}
 .reset{float:right;background:#fff;color:#c0392b;border:1px solid #c0392b;border-radius:4px;font-size:13px}
 #zukan table,#cities table,#day table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
 #zukan td,#zukan th,#cities td,#cities th,#day td,#day th{border-bottom:1px solid #ddd;padding:5px 4px;text-align:left}
@@ -174,9 +176,9 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=28"></script>
-<script src="data.js?v=28"></script>
-<script src="constellations.js?v=28"></script>
-<script src="app.js?v=28"></script>
+<script src="config.js?v=29"></script>
+<script src="data.js?v=29"></script>
+<script src="constellations.js?v=29"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

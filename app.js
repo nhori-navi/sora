@@ -2894,8 +2894,9 @@ $('yosoReset').onclick = () => { yosoResetV24(); if (!yoso.rt) { yoso.rt = {}; y
 }
 function rtWaitShow() {
   const n = new Set(planes.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs || '') && !routeEntry(p.cs)).map(p => p.cs)).size;
-  const how = viewOnly() || Date.now() < relayRtOffUntil ? '・スマホから直接' : '';
-  $('rtWait').textContent = n ? `　行き先を調べ中 ${n}機${how}${rtLastErr ? '（' + rtLastErr + '）' : ''}` : '';
+  const now = Date.now(), how = now < directOffUntil ? '・中継で' : viewOnly() || now < relayRtOffUntil ? '・スマホから直接' : '';
+  const why = [rtLastErr, directLastErr].filter(Boolean).join('・');
+  $('rtWait').textContent = n ? `　行き先を調べ中 ${n}機${how}${why ? '（' + why + '）' : ''}` : '';
 }
 setInterval(() => { if (!document.hidden) rtWaitShow(); }, 2000);
 
@@ -2905,7 +2906,7 @@ setInterval(() => { if (!document.hidden) rtWaitShow(); }, 2000);
 // よその空：最初から直接（中継の負担を増やさず、いつもの空の行き先に響かないように）
 const RT_DIRECT = 'https://api.adsb.lol/api/0/routeset', RT_DIRECT_MAX = 50;
 const directWait = new Map(); // 直接でも調べられなかった便 → もう一度調べてよい時刻
-let directBusy = false;
+let directBusy = false, directFail = 0, directOffUntil = 0, directLastErr = ''; // v29：直接が続けて失敗した回数・直接を休む時刻
 const apConvVrs = a => ({iata:a.iata || '', name:a.name || '', loc:a.location || '',
   lat:+(+a.lat).toFixed(3), lon:+(+a.lon).toFixed(3), cc:a.countryiso2 || ''});
 // 経由便のとき、機体の位置からみて遠回りがいちばん少ない区間を選ぶ
@@ -2922,6 +2923,7 @@ function pickLegAt(aps, p) {
 async function routesDirect(list) {
   if (directBusy) return false;
   const now = Date.now(), direct = viewOnly() || now < relayRtOffUntil;
+  if (now < directOffUntil) return false; // 直接を休んでいる間（v29）
   const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)
     && (direct || routeWait.has(p.cs)) && !((directWait.get(p.cs) || 0) > now)).map(p => p.cs))].slice(0, RT_DIRECT_MAX);
   if (!need.length) return false;
@@ -2940,15 +2942,17 @@ async function routesDirect(list) {
       routeWait.delete(cs); directWait.delete(cs);
     });
     saveRoutes();
-    if (/^直接/.test(rtLastErr)) rtLastErr = '';
+    directFail = 0;
+    directLastErr = '';
     return true;
   } catch (e) {
     need.forEach(cs => directWait.set(cs, Date.now() + 120000));
-    rtLastErr = '直接：' + (e.name === 'AbortError' ? '応答なし' : e.message);
+    directLastErr = '直接：' + (e.name === 'AbortError' ? '応答なし' : /HTTP/.test(e.message) ? e.message : 'つながらない（' + e.message + '）');
+    if (++directFail >= 1) directOffUntil = Date.now() + 600000; // だめなら10分間は直接を休み、中継で調べる（v29）
     return false;
   } finally { clearTimeout(tm); directBusy = false; }
 }
-relaySkip = () => viewOnly() || Date.now() < relayRtOffUntil;
+relaySkip = () => Date.now() < relayRtOffUntil || (viewOnly() && Date.now() >= directOffUntil); // よその空は直接。ただし直接を休んでいる間は中継で（v29）
 const fetchRoutesV26b = fetchRoutes;
 fetchRoutes = async function (list) {
   const a = await fetchRoutesV26b(list); // 中継（よその空・中継を休んでいる間は、中で何もしない）
@@ -2956,6 +2960,16 @@ fetchRoutes = async function (list) {
   if (b && viewOnly()) yosoRoutes(planes);
   return a || b;
 };
+
+// ---------- 地図の右の白い壁を直す（v29） ----------
+// 地図の上に右寄せのボタン（記録を消す・線を消す）があると、地図が作られた瞬間だけ幅が狭くなり、右に白い帯が残っていた
+// index.html で地図を右寄せのボタンの下に回し（clear:both）、開いたあとにも幅を測り直す
+const mapFit = m => { if (m) { try { m.resize(); } catch (e) {} } };
+const citiesBtnV14 = $('citiesBtn').onclick;
+$('citiesBtn').onclick = () => { citiesBtnV14(); setTimeout(() => mapFit(citiesMap), 50); setTimeout(() => mapFit(citiesMap), 400); };
+const yosoBtnV25 = $('yosoBtn').onclick;
+$('yosoBtn').onclick = () => { yosoBtnV25(); setTimeout(() => mapFit(yosoMap), 50); setTimeout(() => mapFit(yosoMap), 400); };
+window.addEventListener('resize', () => { mapFit(citiesMap); mapFit(yosoMap); });
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

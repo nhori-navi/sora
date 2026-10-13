@@ -1771,7 +1771,7 @@ function ring10Setup() {
   map.addLayer({id:'ring10', type:'line', source:'ring10', filter:['==', ['geometry-type'], 'Polygon'],
     paint:{'line-color':'#e67e22', 'line-width':1.5, 'line-dasharray':[1, 2], 'line-opacity':0.8}});
   map.addLayer({id:'ring10lab', type:'symbol', source:'ring10', filter:['==', ['geometry-type'], 'Point'],
-    layout:{'text-field':'10km（行き先を記録する範囲）', 'text-size':11, 'text-anchor':'bottom', 'text-offset':[0, -0.2]},
+    layout:{'text-field':'10km（図鑑に入る範囲）', 'text-size':11, 'text-anchor':'bottom', 'text-offset':[0, -0.2]},
     paint:{'text-color':'#c0612b', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
   drawRing10();
 }
@@ -2884,7 +2884,7 @@ const renderYosoV25 = renderYoso;
 renderYoso = function () {
   renderYosoV25();
   const n = Object.keys(yoso.rt || {}).length;
-  $('yosoScore').innerHTML += `<br><span class="small">地球儀の線：よその空で見た便の出発地→行き先 ${n}路線（同じ路線は1本）</span>`;
+  $('yosoScore').innerHTML += `<br><span class="small">地球儀の線：よその空でキャッチした便の出発地→行き先 ${n}路線（同じ路線は1本）</span>`;
 };
 {
   const b = document.createElement('button'); b.id = 'yosoLineReset'; b.className = 'reset'; b.textContent = '線を消す';
@@ -3073,6 +3073,34 @@ routesDirect = async function (list) {
   const r = await routesDirectV30(list);
   if (/429/.test(directLastErr) && Date.now() >= directOffUntil) directOffUntil = Date.now() + 120000;
   return r;
+};
+
+// ---------- 都市と地球儀の線はキャッチした便だけ（v32） ----------
+// いつもの空：都市（行き先と出発地→行き先の線）に入れるのは、空に向けてキャッチした旅客機で、出発地と行き先が分かった便だけ（10km以内を通っただけの便は入れない）
+// よその空：地球儀の線も、よその空でキャッチした便だけ
+const CATCH_RT_KEEP = 1800000; // キャッチしたあと行き先を待つ時間（30分）
+noteNear = function () {}; // 10km以内を通っただけでは都市の候補にしない
+const yosoCaughtCs = new Map(); // よその空でキャッチした便名 → 時刻
+const doCatchV31 = doCatch;
+doCatch = function (p, now) {
+  doCatchV31(p, now);
+  if (viewOnly() || p.mil || !/^[A-Z]{2,3}\d/.test(p.cs || '')) return;
+  nearCand.forEach((x, k) => { if (now - x.t > CATCH_RT_KEEP) nearCand.delete(k); });
+  nearCand.set(p.hex, {cs:p.cs, t:now}); // 行き先が分かっていればすぐ、まだなら分かった時点で都市に入る
+  recordCities();
+};
+const yosoCatchV24 = yosoCatch;
+yosoCatch = function (p, now) {
+  yosoCatchV24(p, now);
+  if (p.mil || !p.cs) return;
+  yosoCaughtCs.set(p.cs, now);
+  yosoRoutes(planes);
+};
+const yosoRoutesV26 = yosoRoutes;
+yosoRoutes = function (list) {
+  const now = Date.now();
+  yosoCaughtCs.forEach((t, cs) => { if (now - t > CATCH_RT_KEEP) yosoCaughtCs.delete(cs); });
+  yosoRoutesV26(list.filter(p => p.cs && yosoCaughtCs.has(p.cs)));
 };
 
 const savedPos = lsGet('sora_lastpos', null);

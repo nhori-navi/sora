@@ -241,7 +241,9 @@ async function tick() {
 
 // ---------- 行き先（スマホに覚えておく） ----------
 const ROUTE_DAYS = 30, NONE_HOURS = 12;
-const routeWait = new Map(); // v27：調べられなかった便 → もう一度調べてよい時刻（2分あと）
+const routeWait = new Map(); // v27：中継が調べられなかった便 → もう一度中継に聞いてよい時刻（2分あと）
+let relayRtFail = 0, relayRtOffUntil = 0, rtLastErr = ''; // v28：中継が続けて失敗した回数・中継を休む時刻・うまくいかない理由
+let relaySkip = () => false; // v28：中継に聞かないとき（よその空・中継を休んでいる間）
 function routeEntry(cs) {
   const r = cs && routes[cs];
   if (!r) return null;
@@ -260,7 +262,7 @@ function saveRoutes() {
 const apConv = a => ({iata:a.iata_code || '', name:a.name || '', loc:a.municipality || '',
   lat:+(+a.latitude).toFixed(3), lon:+(+a.longitude).toFixed(3), cc:a.country_iso_name || ''});
 async function fetchRoutes(list) {
-  if (routeBusy) return false;
+  if (routeBusy || relaySkip()) return false;
   const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs) && !((routeWait.get(p.cs) || 0) > Date.now())).map(p => p.cs))].slice(0, 10);
   if (!need.length) return false;
   routeBusy = true;
@@ -269,15 +271,21 @@ async function fetchRoutes(list) {
     const r = await tfetch(`${RELAY_CF}/routes/${need.join(',')}`, 15000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json(), now = Date.now();
+    let nErr = 0;
     need.forEach(cs => {
       const fr = j[cs];
       if (fr && fr.origin && fr.destination) routes[cs] = {t:now, a:[apConv(fr.origin), apConv(fr.destination)]};
       else if (!fr) routes[cs] = {t:now, none:1};
-      else routeWait.set(cs, now + 120000); // 中継が調べられなかった便は2分あとに回す（v27）
+      else { routeWait.set(cs, now + 120000); nErr++; rtLastErr = '中継：' + fr.error; } // 中継が調べられなかった便は2分あとに回す（v27）
     });
+    if (nErr < need.length) { relayRtFail = 0; if (/^中継/.test(rtLastErr)) rtLastErr = ''; }
+    else if (++relayRtFail >= 3) relayRtOffUntil = now + 600000; // 3回続けて全部だめなら10分間は中継を休む（v28）
     saveRoutes();
     return true;
-  } catch (e) { need.forEach(cs => routeWait.set(cs, Date.now() + 120000)); showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
+  } catch (e) {
+    need.forEach(cs => routeWait.set(cs, Date.now() + 120000)); rtLastErr = '中継：' + (e.name === 'AbortError' ? '応答なし' : e.message);
+    if (++relayRtFail >= 3) relayRtOffUntil = Date.now() + 600000;
+    showErr('行き先の取得に失敗：' + e.message + '（中継のコードを新しくしたか確認してください）'); return false; }
   finally { routeBusy = false; }
 }
 function apName(ap) { return JA_AP[ap.iata] || ap.loc || ap.name || ap.iata || '?'; }
@@ -2878,24 +2886,76 @@ const yosoResetV24 = $('yosoReset').onclick;
 $('yosoReset').onclick = () => { yosoResetV24(); if (!yoso.rt) { yoso.rt = {}; yoso.rtSeen = {}; yosoSave(); renderYoso(); } };
 
 // ---------- 行き先の調べ方の改善（v27） ----------
-// 調べられなかった便は2分あとに回す（routeWait。fetchRoutes の中を直した）。よその空では10秒に20機（10機ずつ2回）調べる
-// 「更新 〇時〇分」の行に、行き先を待っている機体の数を出す
-const fetchRoutesV26 = fetchRoutes;
-fetchRoutes = async function (list) {
-  const a = await fetchRoutesV26(list);
-  if (!viewOnly()) return a;
-  const b = await fetchRoutesV26(list);
-  return a || b;
-};
+// 調べられなかった便は2分あとに回す（routeWait。fetchRoutes の中を直した）
+// 「更新 〇時〇分」の行に、行き先を待っている機体の数を出す（v28 で、うまくいかない理由も出す）
 {
   const sp = document.createElement('span'); sp.id = 'rtWait';
   $('upd').after(sp);
 }
 function rtWaitShow() {
   const n = new Set(planes.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs || '') && !routeEntry(p.cs)).map(p => p.cs)).size;
-  $('rtWait').textContent = n ? `　行き先を調べ中 ${n}機` : '';
+  const how = viewOnly() || Date.now() < relayRtOffUntil ? '・スマホから直接' : '';
+  $('rtWait').textContent = n ? `　行き先を調べ中 ${n}機${how}${rtLastErr ? '（' + rtLastErr + '）' : ''}` : '';
 }
 setInterval(() => { if (!document.hidden) rtWaitShow(); }, 2000);
+
+// ---------- 行き先をスマホから直接調べる（v28） ----------
+// adsb.lol の行き先の窓口（routeset）はブラウザから直接呼べる。1回に100機まで受け付けるので、50機ずつまとめて聞く
+// いつもの空：中継で10機ずつ → 中継が調べられなかった便は直接。中継が3回続けて失敗したら10分間は直接だけ
+// よその空：最初から直接（中継の負担を増やさず、いつもの空の行き先に響かないように）
+const RT_DIRECT = 'https://api.adsb.lol/api/0/routeset', RT_DIRECT_MAX = 50;
+const directWait = new Map(); // 直接でも調べられなかった便 → もう一度調べてよい時刻
+let directBusy = false;
+const apConvVrs = a => ({iata:a.iata || '', name:a.name || '', loc:a.location || '',
+  lat:+(+a.lat).toFixed(3), lon:+(+a.lon).toFixed(3), cc:a.countryiso2 || ''});
+// 経由便のとき、機体の位置からみて遠回りがいちばん少ない区間を選ぶ
+function pickLegAt(aps, p) {
+  if (aps.length === 2 || !p || !p.p) return [aps[0], aps[1]];
+  let best = 0, bestV = Infinity;
+  for (let i = 0; i < aps.length - 1; i++) {
+    const a = [aps[i].lon, aps[i].lat], b = [aps[i + 1].lon, aps[i + 1].lat];
+    const v = gcKm(a, p.p) + gcKm(p.p, b) - gcKm(a, b);
+    if (v < bestV) { bestV = v; best = i; }
+  }
+  return [aps[best], aps[best + 1]];
+}
+async function routesDirect(list) {
+  if (directBusy) return false;
+  const now = Date.now(), direct = viewOnly() || now < relayRtOffUntil;
+  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)
+    && (direct || routeWait.has(p.cs)) && !((directWait.get(p.cs) || 0) > now)).map(p => p.cs))].slice(0, RT_DIRECT_MAX);
+  if (!need.length) return false;
+  directBusy = true;
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const body = need.map(cs => { const p = list.find(x => x.cs === cs); return {callsign:cs, lat:p && p.p ? +p.p[1].toFixed(3) : 0, lng:p && p.p ? +p.p[0].toFixed(3) : 0}; });
+    const r = await fetch(RT_DIRECT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({planes:body}), signal:ctl.signal});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const arr = await r.json(), got = new Map((Array.isArray(arr) ? arr : []).map(x => [x.callsign, x])), t = Date.now();
+    need.forEach(cs => {
+      const x = got.get(cs);
+      const aps = x && x.airport_codes !== 'unknown' ? (x._airports || []).filter(a => a && a.lat != null && a.lon != null) : [];
+      if (aps.length >= 2) { const [o, d] = pickLegAt(aps, list.find(p => p.cs === cs)); routes[cs] = {t, a:[apConvVrs(o), apConvVrs(d)]}; }
+      else routes[cs] = {t, none:1};
+      routeWait.delete(cs); directWait.delete(cs);
+    });
+    saveRoutes();
+    if (/^直接/.test(rtLastErr)) rtLastErr = '';
+    return true;
+  } catch (e) {
+    need.forEach(cs => directWait.set(cs, Date.now() + 120000));
+    rtLastErr = '直接：' + (e.name === 'AbortError' ? '応答なし' : e.message);
+    return false;
+  } finally { clearTimeout(tm); directBusy = false; }
+}
+relaySkip = () => viewOnly() || Date.now() < relayRtOffUntil;
+const fetchRoutesV26b = fetchRoutes;
+fetchRoutes = async function (list) {
+  const a = await fetchRoutesV26b(list); // 中継（よその空・中継を休んでいる間は、中で何もしない）
+  const b = await routesDirect(list);
+  if (b && viewOnly()) yosoRoutes(planes);
+  return a || b;
+};
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

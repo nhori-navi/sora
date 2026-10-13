@@ -2971,6 +2971,78 @@ const yosoBtnV25 = $('yosoBtn').onclick;
 $('yosoBtn').onclick = () => { yosoBtnV25(); setTimeout(() => mapFit(yosoMap), 50); setTimeout(() => mapFit(yosoMap), 400); };
 window.addEventListener('resize', () => { mapFit(citiesMap); mapFit(yosoMap); });
 
+// ---------- まとめて聞く窓口がだめなら1便ずつ聞く（v30） ----------
+// adsb.lol の「まとめて聞く窓口」（POST routeset）が中継からもスマホからもつながらないことがあった（2026-10-13）
+// 「1便ずつ聞く窓口」（GET /api/0/route/便名/緯度/経度）は答えるので、まとめてがだめなら1便ずつ聞く（10秒に最大20便、同時に5便まで）
+const RT_ONE = 'https://api.adsb.lol/api/0/route/', RT_ONE_MAX = 20, RT_ONE_PAR = 5;
+let postOffUntil = 0; // まとめて聞く窓口を休む時刻（だめだったら10分）
+function directApply(cs, x, list, t) {
+  const aps = x && x.airport_codes !== 'unknown' ? (x._airports || []).filter(a => a && a.lat != null && a.lon != null) : [];
+  if (aps.length >= 2) { const [o, d] = pickLegAt(aps, list.find(p => p.cs === cs)); routes[cs] = {t, a:[apConvVrs(o), apConvVrs(d)]}; }
+  else routes[cs] = {t, none:1};
+  routeWait.delete(cs); directWait.delete(cs);
+}
+const posOf = (cs, list) => { const p = list.find(x => x.cs === cs); return p && p.p ? [+p.p[1].toFixed(3), +p.p[0].toFixed(3)] : [0, 0]; };
+async function tfetchOne(url, ms) {
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, {signal:ctl.signal}); } finally { clearTimeout(tm); }
+}
+const errText = e => e.name === 'AbortError' ? '応答なし' : /HTTP/.test(e.message) ? e.message : 'つながらない（' + e.message + '）';
+routesDirect = async function (list) {
+  if (directBusy) return false;
+  const now = Date.now(), direct = viewOnly() || now < relayRtOffUntil;
+  if (now < directOffUntil) return false;
+  const one = now < postOffUntil;
+  const need = [...new Set(list.filter(p => !p.mil && /^[A-Z]{2,3}\d/.test(p.cs) && !routeEntry(p.cs)
+    && (direct || routeWait.has(p.cs)) && !((directWait.get(p.cs) || 0) > now)).map(p => p.cs))].slice(0, one ? RT_ONE_MAX : RT_DIRECT_MAX);
+  if (!need.length) return false;
+  directBusy = true;
+  try {
+    let got = null, why = '';
+    if (!one) { // まとめて聞く
+      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+      try {
+        const body = need.map(cs => { const [la, lo] = posOf(cs, list); return {callsign:cs, lat:la, lng:lo}; });
+        const r = await fetch(RT_DIRECT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({planes:body}), signal:ctl.signal});
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const arr = await r.json();
+        got = new Map((Array.isArray(arr) ? arr : []).map(x => [x.callsign, x]));
+      } catch (e) { why = 'まとめて：' + errText(e); postOffUntil = Date.now() + 600000; }
+      finally { clearTimeout(tm); }
+    }
+    if (got) { const t = Date.now(); need.forEach(cs => directApply(cs, got.get(cs), list, t)); }
+    else { // 1便ずつ聞く
+      const todo = need.slice(0, RT_ONE_MAX), done = [];
+      let lastErr = null;
+      for (let i = 0; i < todo.length; i += RT_ONE_PAR) {
+        await Promise.all(todo.slice(i, i + RT_ONE_PAR).map(async cs => {
+          try {
+            const [la, lo] = posOf(cs, list);
+            const r = await tfetchOne(`${RT_ONE}${encodeURIComponent(cs)}/${la}/${lo}`, 10000);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            directApply(cs, await r.json(), list, Date.now()); done.push(cs);
+          } catch (e) { lastErr = e; directWait.set(cs, Date.now() + 120000); }
+        }));
+      }
+      if (!done.length) throw lastErr || new Error('つながらない');
+      if (lastErr) why = (why ? why + '・' : '') + '1便ずつ：' + errText(lastErr);
+    }
+    saveRoutes();
+    directFail = 0; directLastErr = why;
+    return true;
+  } catch (e) {
+    need.forEach(cs => directWait.set(cs, Date.now() + 120000));
+    directLastErr = '直接：' + errText(e);
+    if (++directFail >= 1) directOffUntil = Date.now() + 600000; // だめなら10分間は直接を休み、中継で調べる
+    return false;
+  } finally { directBusy = false; }
+};
+const rtWaitShowV27 = rtWaitShow;
+rtWaitShow = function () {
+  rtWaitShowV27();
+  if ($('rtWait').textContent && Date.now() < postOffUntil && Date.now() >= directOffUntil) $('rtWait').textContent = $('rtWait').textContent.replace('・スマホから直接', '・スマホから1便ずつ');
+};
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、

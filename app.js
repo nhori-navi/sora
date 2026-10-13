@@ -302,7 +302,7 @@ function apName(ap) { return JA_AP[ap.iata] || ap.loc || ap.name || ap.iata || '
 function routeInfo(p) {
   const r = routeEntry(p.cs);
   if (!r || r.none || !r.a) return null;
-  return {text:r.a.map(apName).join(' → '), destName:apName(r.a[1]), orig:[r.a[0].lon, r.a[0].lat], dest:[r.a[1].lon, r.a[1].lat]};
+  return {text:r.a.map(apName).join(' → '), destName:apName(r.a[1]), origName:apName(r.a[0]), orig:[r.a[0].lon, r.a[0].lat], dest:[r.a[1].lon, r.a[1].lat]};
 }
 function routeText(p) {
   const ri = routeInfo(p);
@@ -328,7 +328,7 @@ function cardHtml(p) {
     p.win && p.win.best ? esc(p.win.best.sub.slice(0, 1) + '窓に' + p.win.best.name) : ''].filter(Boolean).join('　');
   return `<div class="card${p.mil ? ' mil' : p.sun ? ' sun' : ''}${p.hex === sel ? ' sel' : ''}" id="c_${esc(p.hex)}" data-hex="${esc(p.hex)}">
     <div class="where">${p.mil ? '<b style="color:#c0392b">軍用機</b>　' : ''}${dirName(p.dir)} ${p.dist.toFixed(1)}km・見上げ角 ${Math.round(p.elev)}°</div>
-    <div class="route">${esc(routeText(p))}</div>
+    <div class="route">${esc(routeText(p))}${noveltyHtml(p)}</div>
     <div class="info">${esc(infoText(p))}</div>
     <div class="small">${alt}${p.kmh ? '・時速' + p.kmh + 'km' : ''}${nt ? `　<span class="${hot ? 'near' : ''}">${nt}</span>` : ''}</div>
     ${extra ? `<div class="small">${extra}</div>` : ''}</div>`;
@@ -573,7 +573,8 @@ function drawScope() {
     g.beginPath(); g.arc(x, y, p.hex === sel ? 7 : 5, 0, 7); g.fill();
     const ri = routeInfo(p);
     g.fillStyle = '#fff'; g.font = '12px sans-serif';
-    g.fillText((p.cs || p.reg || '?') + (ri ? ' ' + ri.destName + '行き' : p.mil ? ' 軍用機' : ''), x + 9, y + 4);
+    g.fillText((p.cs || p.reg || '?') + (ri ? ' ' + ri.origName + '→' + ri.destName : p.mil ? ' 軍用機' : ''), x + 9, y + 4);
+    { const nv = noveltyOf(p); if (nv) { g.font = 'bold 11px sans-serif'; g.fillStyle = nv.c; g.fillText(nv.t + '！', x + 9, y - 8); } } // 新都市・新路線（v33）
   });
   // 宇宙ステーション
   if (issNow && issNow.el > -5) {
@@ -1384,7 +1385,7 @@ function addScore(pt, now) {
 // キャッチに点を付ける（v12 の doCatch を包み直す）
 const doCatchBase = doCatch;
 doCatch = function (p, now) {
-  const code = p.type || '?', firstType = code !== '?' && !catchData.types[code], rar = rarityOf(code);
+  const code = p.type || '?', firstType = code !== '?' && !catchData.types[code], rar = rarityOf(code), nv0 = noveltyOf(p); // 新都市・新路線はキャッチの記録より前に調べる（v33）
   doCatchBase(p, now);
   const e = catchData.types[code], lv = lvOf(e.n), lvUp = e.n > 1 && LV_AT.includes(e.n);
   const parts = [], add = (t, v) => { parts.push(`${t}+${v}`); return v; };
@@ -1393,6 +1394,7 @@ doCatch = function (p, now) {
   if (firstType) pt += add('初めての機種', 50);
   if (p.sun) pt += add(p.sun.kind, 30);
   if (p.elev >= 70) pt += add('真上', 20);
+  if (nv0) pt += add(nv0.t, nv0.pt); // 新都市・新路線（v33）
   if (lvUp) pt += add(`Lv${lv}`, 30);
   if (catchData.log[0]) { catchData.log[0].pt = pt; catchData.log[0].rar = rar[1]; }
   const D = dayGet(); if (D.cat && D.cat.length) { const c = D.cat[D.cat.length - 1]; c.pt = pt; c.rar = rar[1]; }
@@ -1793,7 +1795,7 @@ render = function () {
     if (m) m.getElement().classList.toggle('catchable', !p.ground && p.elev >= CATCH_MIN_ELEV && !caughtToday(p.hex));
     if (p.ground || p.dist > 10) return;
     keep.add(p.hex);
-    const ri = routeInfo(p), txt = [ri ? ri.destName + '行き' : (p.mil ? '軍用機' : ''), p.type || ''].filter(Boolean).join(' ');
+    const ri = routeInfo(p), nv = noveltyOf(p), txt = [nv ? nv.t : '', ri ? ri.destName + '行き' : (p.mil ? '軍用機' : ''), p.type || ''].filter(Boolean).join(' ');
     let L = labMarkers.get(p.hex);
     if (!L) {
       const el = document.createElement('div'); el.className = 'plab';
@@ -2522,6 +2524,7 @@ function yosoCatch(p, now) {
   if (code !== '?' && !zukan.types[code]) pt += add('★自分の空でまだ', 30);
   if (p.sun) pt += add(p.sun.kind, 30);
   if (p.elev >= 70) pt += add('真上', 20);
+  { const nv = noveltyOf(p); if (nv) pt += add(nv.t, nv.pt); } // 新都市・新路線（v33）
   if (code !== '?') { yoso.cat.types[code] = (yoso.cat.types[code] || 0) + 1; e.cty = e.cty || {}; e.cty[code] = (e.cty[code] || 0) + 1; } // キャッチした機種（v31）
   const ri = routeInfo(p);
   const total = yosoCatchRec(e, {t:now, hex:p.hex, cs:p.cs || p.reg, ty:code, mil:p.mil ? 1 : 0, route:ri ? ri.text : '', pt, rar:rar[1]}, pt);
@@ -2714,6 +2717,7 @@ renderCities = function () {
   $('citiesReset').after(b);
   b.onclick = () => {
     if (!confirm('都市の地図の線をすべて消します（都市の記録と表は残ります）。これから記録した便の線がまた描かれていきます。よろしいですか？')) return;
+    cities.rk = cities.rk || {}; Object.keys(cities.rt || {}).forEach(k => { cities.rk[k] = 1; }); // 線を消しても「新路線」の判定には残す（v33）
     cities.rt = {}; cities.lineCut = today(); lsSet('sora_cities_v1', cities); renderCities();
   };
 }
@@ -2891,6 +2895,7 @@ renderYoso = function () {
   $('yosoReset').after(b);
   b.onclick = () => {
     if (!confirm('地球儀の線をすべて消します（よその空の場所やスコアの記録は残ります）。よろしいですか？')) return;
+    yoso.rk = yoso.rk || {}; Object.keys(yoso.rt || {}).forEach(k => { yoso.rk[k] = 1; }); // 線を消しても「新路線」の判定には残す（v33）
     yoso.rt = {}; yoso.rtSeen = {}; yosoSave(); renderYoso();
   };
 }
@@ -3102,6 +3107,37 @@ yosoRoutes = function (list) {
   yosoCaughtCs.forEach((t, cs) => { if (now - t > CATCH_RT_KEEP) yosoCaughtCs.delete(cs); });
   yosoRoutesV26(list.filter(p => p.cs && yosoCaughtCs.has(p.cs)));
 };
+
+// ---------- 新都市・新路線の印（v33） ----------
+// まだキャッチしていない行き先の都市（新都市）・出発地→行き先の組（新路線）の便に印を付け、キャッチの点にボーナス（新都市+30、新路線+20）
+// いつもの空は都市の記録（cities.list・cities.rt・線を消す前の cities.rk）、よその空はよその空ノートの線（yoso.rt・yoso.rk）と比べる
+// 印は、空に向けた画面（機体の上）、下の機体一覧、地図の機体の名前（10km以内）に出す。行き先が分からない機体・軍用機・今日キャッチ済みの機体には出さない
+const apKey = a => a.iata || a.name;
+function noveltyOf(p) {
+  if (!p || p.ground || p.mil || !p.cs || caughtToday(p.hex)) return null;
+  const r = routeEntry(p.cs);
+  if (!r || r.none || !r.a || r.a.length < 2) return null;
+  const o = r.a[0], d = r.a[1], key = apKey(o) + '>' + apKey(d);
+  if (viewOnly()) {
+    const rt = yoso.rt || {}, rk = yoso.rk || {}, dn = apName(d);
+    if (!Object.values(rt).some(e => e.d && e.d.name === dn)) return {t:'新都市', pt:30, c:'#ff8ad8', k:'city'};
+    if (!rt[key] && !rk[key]) return {t:'新路線', pt:20, c:'#ffc04d', k:'route'};
+    return null;
+  }
+  if (!cities.list[apKey(d)]) return {t:'新都市', pt:30, c:'#ff8ad8', k:'city'};
+  if (!(cities.rt || {})[key] && !(cities.rk || {})[key]) return {t:'新路線', pt:20, c:'#ffc04d', k:'route'};
+  return null;
+}
+function noveltyHtml(p) {
+  const nv = noveltyOf(p);
+  return nv ? ` <span class="nv nv-${nv.k}">${nv.t}</span>` : '';
+}
+{
+  const st = document.createElement('style');
+  st.textContent = '.nv{display:inline-block;font-size:12px;font-weight:bold;padding:0 6px;margin-left:6px;border-radius:10px;vertical-align:middle;color:#fff}' +
+    '.nv-city{background:#d63fa6}.nv-route{background:#e08a00}';
+  document.head.appendChild(st);
+}
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------

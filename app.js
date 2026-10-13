@@ -18,8 +18,18 @@ const markers = new Map(), photos = new Map(), notified = new Set();
 // ---------- 保存（スマホ内） ----------
 function lsGet(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+// v31：図鑑の数え方を変えたので、開発中の記録を1回だけ消す（設定・現在地・ためた行き先は残す）
+try {
+  if (!localStorage.getItem('sora_reset_v31')) {
+    ['sora_zukan_v1', 'sora_cities_v1', 'sora_day_v1', 'sora_catch_v1', 'sora_badge_v1', 'sora_yoso_v1', 'sora_seen_v1'].forEach(k => localStorage.removeItem(k));
+    localStorage.setItem('sora_reset_v31', '1');
+  }
+} catch (e) {}
 let routes = lsGet('sora_routes_v1', {}); if (!routes || typeof routes !== 'object') routes = {};
 let zukan = lsGet('sora_zukan_v1', null); if (!zukan || !zukan.types || !zukan.seen) zukan = {types:{}, seen:{}};
+// v31：表示範囲で見かけた回数（機種ごと。図鑑には出さず、レア度に使う）。図鑑に入れるのは10km以内を通った機体とキャッチした機体
+let seenAll = lsGet('sora_seen_v1', null); if (!seenAll || !seenAll.types || !seenAll.seen) seenAll = {types:{}, seen:{}};
+const ZK_KM = 10;
 let offset = Number(lsGet('sora_offset', 0)) || 0;
 let fovCam = Number(lsGet('sora_fov', 28)) || 28;
 let cities = lsGet('sora_cities_v1', null); if (!cities || !cities.list || !cities.seen) cities = {list:{}, seen:{}};
@@ -434,11 +444,13 @@ function notify(list) {
 
 // ---------- 機種図鑑 ----------
 function record(list) {
-  const d = today(), wasEmpty = Object.keys(zukan.types).length === 0;
-  let changed = false;
+  const d = today();
+  let changed = false, seenCh = false;
   list.forEach(p => {
     if (p.ground) return;
     const k = p.hex + '|' + d;
+    if (!seenAll.seen[k]) { seenAll.seen[k] = d; seenCh = true; const c = p.type || '?'; seenAll.types[c] = (seenAll.types[c] || 0) + 1; }
+    if (!(p.dist <= ZK_KM) && !p.zkCatch) return; // 図鑑に入れるのは10km以内を通った機体とキャッチした機体（v31）
     if (zukan.seen[k]) return;
     zukan.seen[k] = d; changed = true;
     const code = p.type || '?';
@@ -446,13 +458,17 @@ function record(list) {
     if (!e) {
       e = zukan.types[code] = {n:0, first:d, last:d, mil:0};
       if (p.type) dayNewType(p.type);
-      if (p.type && !wasEmpty) {
+      if (p.type && !p.zkCatch) { // キャッチのときは、キャッチの知らせが出るので出さない（v31）
         const cnt = Object.keys(zukan.types).filter(x => x !== '?').length;
         alertMsg(`新しい機種を発見：${typeName(p)}（図鑑 ${cnt}種目）`, p.hex, false);
       }
     }
     e.n++; e.last = d; if (p.mil) e.mil = 1;
   });
+  if (seenCh) {
+    for (const k in seenAll.seen) if (seenAll.seen[k] !== d) delete seenAll.seen[k];
+    lsSet('sora_seen_v1', seenAll);
+  }
   if (!changed) return;
   for (const k in zukan.seen) if (zukan.seen[k] !== d) delete zukan.seen[k];
   lsSet('sora_zukan_v1', zukan);
@@ -1079,13 +1095,14 @@ function dayRecord(list, now) {
   s.to = now;
   list.forEach(p => {
     if (p.ground) return;
-    if (!D.hx[p.hex]) {
+    const meet = p.dist <= ZK_KM || p.zkCatch; // 今日の空の数も、10km以内を通った機体とキャッチした機体（v31）
+    if (meet && !D.hx[p.hex]) {
       D.hx[p.hex] = 1; D.n++;
       const code = p.type || '?';
       D.ty[code] = (D.ty[code] || 0) + 1;
       if (p.mil) { D.milN++; D.mil[code] = (D.mil[code] || 0) + 1; }
     }
-    if (!s.hx[p.hex]) { s.hx[p.hex] = 1; s.n++; }
+    if (meet && !s.hx[p.hex]) { s.hx[p.hex] = 1; s.n++; }
     if (!s.near || p.dist < s.near.km) s.near = nearRec(p, now);
     if (!s.u && (!D.near || p.dist < D.near.km)) D.near = nearRec(p, now);
     if (p.sun && !D.sx[p.hex]) {
@@ -1352,7 +1369,7 @@ const RARITY = [ // [図鑑で見た回数の上限, 名前, 点, 色]
 const LV_AT = [1, 3, 10, 30, 100], ISS_PT = 100;
 function rarityOf(code) {
   if (!code || code === '?') return RARITY[3];
-  const n = (zukan.types[code] && zukan.types[code].n) || 0;
+  const n = seenAll.types[code] || 0; // 表示範囲で見かけた回数（v31）
   return RARITY.find(r => n <= r[0]);
 }
 const lvOf = n => LV_AT.filter(v => n >= v).length;
@@ -2353,7 +2370,7 @@ function yosoRecord(list) {
   if (!yosoOn()) return;
   const e = yosoPlace(); if (!e) return;
   yosoName(e);
-  const d = today(), fresh = [];
+  const d = today();
   if (!e.d.includes(d)) e.d.push(d);
   e.last = d;
   list.forEach(p => {
@@ -2366,15 +2383,11 @@ function yosoRecord(list) {
     if (/^[A-Z]{3}\d/.test(p.cs || '')) { const al = p.cs.slice(0, 3); e.al[al] = (e.al[al] || 0) + 1; }
     if (p.mil) e.mil++;
     if (code === '?') return;
-    if (!yoso.types[code]) { yoso.types[code] = {n:0, first:d}; if (!zukan.types[code]) fresh.push(code); }
+    if (!yoso.types[code]) yoso.types[code] = {n:0, first:d}; // 見かけた回数（レア度に使う。v31 から機種の一覧はキャッチした機種だけ）
     yoso.types[code].n++;
   });
   for (const k in yoso.seen) if (yoso.seen[k] !== d) delete yoso.seen[k];
   yosoSave();
-  if (fresh.length) {
-    alertMsg(`よその空ノート：自分の空ではまだ見たことのない機種 ${fresh.length}種（${fresh.slice(0, 3).map(tyName).join('、')}${fresh.length > 3 ? ' ほか' : ''}）`, null, false);
-    $('toast').classList.add('con');
-  }
   locUi();
   if (yosoIsOpen()) renderYoso();
 }
@@ -2399,7 +2412,7 @@ window.yosoUiHook = yosoUi;
   const box = document.createElement('div'); box.id = 'yoso';
   box.innerHTML = '<button id="yosoClose">閉じる</button> <b>よその空ノート</b>　<span id="yosoSum" class="small"></span><button id="yosoReset" class="reset">記録を消す</button>' +
     '<div id="yosoBody"></div><div class="small" style="margin-top:8px">「よその空に行く」で、いる場所から離れた場所を選んだときに見た機体です。いつもの図鑑・都市・今日の空・バッジとは別に数えます（同じ場所・同じ日は1機1回）。' +
-    '<span class="ynew">★</span>は自分の空（いつもの図鑑）ではまだ見たことのない機種です。地名：© OpenStreetMap contributors（Nominatim）</div>';
+    '機種の一覧は、よその空で空に向けてキャッチした機種です。<span class="ynew">★</span>は自分の空（いつもの図鑑）ではまだ出会っていない機種です。地名：© OpenStreetMap contributors（Nominatim）</div>';
   document.body.appendChild(box);
   const btn = document.createElement('button'); btn.id = 'yosoBtn'; btn.textContent = 'よその空ノート';
   $('badgeBtn').after(btn);
@@ -2407,22 +2420,22 @@ window.yosoUiHook = yosoUi;
 const yosoIsOpen = () => $('yoso').style.display === 'block';
 function renderYoso() {
   const pl = yoso.pl.slice().sort((a, b) => b.last.localeCompare(a.last) || b.n - a.n);
-  const nc = new Set(pl.map(e => e.cc).filter(Boolean)).size, ks = Object.keys(yoso.types);
+  const nc = new Set(pl.map(e => e.cc).filter(Boolean)).size, ks = Object.keys((yoso.cat && yoso.cat.types) || {}).filter(c => c !== 'ISS');
   const newN = ks.filter(c => !zukan.types[c]).length;
-  $('yosoSum').textContent = `${pl.length}か所・${nc}か国・${ks.length}機種（★ ${newN}）`;
+  $('yosoSum').textContent = `${pl.length}か所・${nc}か国・キャッチ ${ks.length}機種（★ ${newN}）`;
   if (!pl.length) {
     $('yosoBody').innerHTML = '<div class="drow small">まだ記録がありません。「よその空に行く」を押して、地図で行ってみたい場所（海外でも）をタップしてください</div>';
     return;
   }
   const cur = yosoOn() && yosoCur;
   $('yosoBody').innerHTML = pl.map(e => {
-    const tys = Object.keys(e.ty).filter(c => c !== '?');
+    const cty = e.cty || {}, tys = Object.keys(cty).filter(c => c !== '?'); // キャッチした機種（v31）
     let h = `<div class="ycard${e === cur ? ' now' : ''}" data-id="${esc(e.id)}"><b>${esc(yosoLabel(e))}</b>${e === cur ? '　<span class="ynew">いまここ</span>' : ''}<br>` +
-      `<span class="small">${esc(e.last.slice(5).replace('-', '/'))}・${e.d.length}日行った・機体 ${e.n}機・${tys.length}機種${e.mil ? `・<b style="color:#c0392b">軍用機 ${e.mil}機</b>` : ''}・航空会社 ${Object.keys(e.al).length}社</span>`;
+      `<span class="small">${esc(e.last.slice(5).replace('-', '/'))}・${e.d.length}日行った・見かけた機体 ${e.n}機${e.mil ? `・<b style="color:#c0392b">軍用機 ${e.mil}機</b>` : ''}・航空会社 ${Object.keys(e.al).length}社</span>`;
     if (yosoOpenId === e.id) {
-      const list = tys.sort((a, b) => e.ty[b] - e.ty[a]).map(c => `${zukan.types[c] ? '' : '<span class="ynew">★</span>'}${esc(tyName(c))}${e.ty[c] > 1 ? '×' + e.ty[c] : ''}`);
+      const list = tys.sort((a, b) => cty[b] - cty[a]).map(c => `${zukan.types[c] ? '' : '<span class="ynew">★</span>'}${esc(tyName(c))}${cty[c] > 1 ? '×' + cty[c] : ''}`);
       const als = Object.keys(e.al).sort((a, b) => e.al[b] - e.al[a]).map(a => esc(AIRLINE[a] || a));
-      h += `<div class="small" style="margin-top:4px;color:#333">機種：${list.join('、') || 'なし'}<br>航空会社：${als.join('、') || 'なし'}<br>行った日：${esc(e.d.map(x => x.slice(5).replace('-', '/')).join('、'))}</div>`;
+      h += `<div class="small" style="margin-top:4px;color:#333">キャッチした機種：${list.join('、') || 'まだありません（空に向けてキャッチすると、ここに入ります）'}<br>見かけた航空会社：${als.join('、') || 'なし'}<br>行った日：${esc(e.d.map(x => x.slice(5).replace('-', '/')).join('、'))}</div>`;
     }
     return h + '</div>';
   }).join('');
@@ -2509,7 +2522,7 @@ function yosoCatch(p, now) {
   if (code !== '?' && !zukan.types[code]) pt += add('★自分の空でまだ', 30);
   if (p.sun) pt += add(p.sun.kind, 30);
   if (p.elev >= 70) pt += add('真上', 20);
-  if (code !== '?') yoso.cat.types[code] = (yoso.cat.types[code] || 0) + 1;
+  if (code !== '?') { yoso.cat.types[code] = (yoso.cat.types[code] || 0) + 1; e.cty = e.cty || {}; e.cty[code] = (e.cty[code] || 0) + 1; } // キャッチした機種（v31）
   const ri = routeInfo(p);
   const total = yosoCatchRec(e, {t:now, hex:p.hex, cs:p.cs || p.reg, ty:code, mil:p.mil ? 1 : 0, route:ri ? ri.text : '', pt, rar:rar[1]}, pt);
   const who = [typeName(p), p.cs || p.reg].filter(Boolean).join(' ') + (ri ? ' ' + ri.text : '');
@@ -2974,7 +2987,7 @@ window.addEventListener('resize', () => { mapFit(citiesMap); mapFit(yosoMap); })
 // ---------- まとめて聞く窓口がだめなら1便ずつ聞く（v30） ----------
 // adsb.lol の「まとめて聞く窓口」（POST routeset）が中継からもスマホからもつながらないことがあった（2026-10-13）
 // 「1便ずつ聞く窓口」（GET /api/0/route/便名/緯度/経度）は答えるので、まとめてがだめなら1便ずつ聞く（10秒に最大20便、同時に5便まで）
-const RT_ONE = 'https://api.adsb.lol/api/0/route/', RT_ONE_MAX = 20, RT_ONE_PAR = 5;
+const RT_ONE = 'https://api.adsb.lol/api/0/route/', RT_ONE_MAX = 10, RT_ONE_PAR = 3; // v31 でゆっくりに（20便・5同時 → 10便・3同時）
 let postOffUntil = 0; // まとめて聞く窓口を休む時刻（だめだったら10分）
 function directApply(cs, x, list, t) {
   const aps = x && x.airport_codes !== 'unknown' ? (x._airports || []).filter(a => a && a.lat != null && a.lon != null) : [];
@@ -3041,6 +3054,25 @@ const rtWaitShowV27 = rtWaitShow;
 rtWaitShow = function () {
   rtWaitShowV27();
   if ($('rtWait').textContent && Date.now() < postOffUntil && Date.now() >= directOffUntil) $('rtWait').textContent = $('rtWait').textContent.replace('・スマホから直接', '・スマホから1便ずつ');
+};
+
+// ---------- 図鑑は10km以内とキャッチだけ（v31） ----------
+// 図鑑・今日の空の数は「10km以内を通った機体」と「空に向けてキャッチした機体」だけ（record・dayRecord の中を直した）
+// よその空ノートの機種の一覧は「キャッチした機種」だけ。レア度は表示範囲で見かけた回数（seenAll、図鑑には出さない）
+BK_SKIP.push('sora_reset_v31');
+const doCatchV30 = doCatch;
+doCatch = function (p, now) {
+  doCatchV30(p, now);
+  if (viewOnly()) return;
+  const q = Object.assign({}, p, {zkCatch:true});
+  recordV8([q]); dayRecordV8([q], now); // キャッチした機体は、遠くても図鑑と今日の空に入れる
+};
+// 1便ずつ聞くときは、ゆっくり（10秒に最大10便、同時3便）。断られたら（429）2分は直接を休み、中継で聞く
+const routesDirectV30 = routesDirect;
+routesDirect = async function (list) {
+  const r = await routesDirectV30(list);
+  if (/429/.test(directLastErr) && Date.now() >= directOffUntil) directOffUntil = Date.now() + 120000;
+  return r;
 };
 
 const savedPos = lsGet('sora_lastpos', null);

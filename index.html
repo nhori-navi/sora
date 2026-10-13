@@ -116,7 +116,7 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
 <div id="zukan">
   <button id="zukanClose">閉じる</button> <b>機種図鑑</b>　<span id="zukanSum" class="small"></span><button id="zukanReset" class="reset">記録を消す</button><button id="catchReset" class="reset">キャッチを消す</button>
   <table><thead><tr><th>機種</th><th>回数</th><th>捕</th><th>初めて見た日</th><th>最近</th></tr></thead><tbody id="zukanBody"></tbody></table>
-  <div class="small" style="margin-top:8px">同じ機体は1日1回だけ数えます。地上の機体は数えません。「軍」は軍用機として見たことがある機種です。「捕」は空に向けてキャッチした回数です。</div>
+  <div class="small" style="margin-top:8px">10km以内を通った機体と、空に向けてキャッチした機体を数えます（同じ機体は1日1回、地上の機体は数えません）。「軍」は軍用機として見たことがある機種です。「捕」は空に向けてキャッチした回数です。</div>
 </div>
 <div id="cities">
   <button id="citiesClose">閉じる</button> <b>この空から行った都市</b><button id="citiesReset" class="reset">記録を消す</button>
@@ -144,7 +144,7 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div id="dayBody"></div>
   <div class="dhead">これまでの日（30日分・日付を押すとその日のまとめ）</div>
   <table><thead><tr><th>日付</th><th>機体</th><th>機種</th><th>場所</th><th>点</th></tr></thead><tbody id="dayList"></tbody></table>
-  <div class="small" style="margin-top:8px">アプリを開いている間に、表示範囲内に見えた機体を数えます（同じ機体は1日1回・地上の機体は除く）。移動中に短く通り過ぎた場所は、場所ごとの欄には出さず、合計にだけ入れます。地名：国土地理院</div>
+  <div class="small" style="margin-top:8px">アプリを開いている間に、10km以内を通った機体と、空に向けてキャッチした機体を数えます（同じ機体は1日1回・地上の機体は除く）。移動中に短く通り過ぎた場所は、場所ごとの欄には出さず、合計にだけ入れます。地名：国土地理院</div>
 </div>
 <div id="panel">
   <div>
@@ -176,9 +176,9 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=30"></script>
-<script src="data.js?v=30"></script>
-<script src="constellations.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="config.js?v=31"></script>
+<script src="data.js?v=31"></script>
+<script src="constellations.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

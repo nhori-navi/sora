@@ -43,7 +43,8 @@
   row.innerHTML = '<label><input type="checkbox" id="helpChk">使い方ナビ</label><button id="helpAll">？ 使い方</button>';
   const tip = document.createElement('div'); tip.id = 'tip';
   tip.innerHTML = '<div id="tipText"></div><button id="tipX" aria-label="閉じる">×</button>';
-  $('panel').prepend(tip); $('panel').prepend(row);
+  $('panel').prepend(tip);
+  if ($('helpSlot')) $('helpSlot').appendChild(row); else $('panel').prepend(row); // v35：設定タブの「使い方」に置く
   $('helpChk').checked = !!H.on;
   $('helpChk').onchange = () => { H.on = $('helpChk').checked; if (H.on && H.done.finish) { H.done = {}; } hSave(); tipKey = ''; closedKey = ''; helpTick(); };
 
@@ -52,14 +53,15 @@
   const SEC = [
     ['about', 'SoraMiru とは', `<p>見上げた空の飛行機が「どこから来て、どこへ行くのか」がすぐ分かるアプリです。飛行機に加えて、月・惑星・星座・宇宙ステーションまで、いまの空を楽しめます。</p>
 <p>スマホを空に向けて飛行機を照準に入れると「キャッチ」でき、点数と図鑑が集まります。世界の空港の空へ「よその空」として遊びに行くこともできます。</p>`],
-    ['screen', '画面の見方', `<ul><li>上は地図、下は近くの機体の一覧です。一覧は「近い順」か「これから来る順」に並べられます。</li>
+    ['screen', '画面の見方', `<ul><li>画面の下のボタン：<b>空</b>（機体の一覧）／<b>記録</b>（図鑑・都市・今日の空・バッジ・よその空ノート・シェア）／真ん中の<b>空に向ける</b>／<b>よその空</b>／<b>設定</b>（知らせ・使い方・記録の保存）。</li>
+<li>上は地図、下は近くの機体の一覧です。一覧は「近い順」か「これから来る順」に並べられます。今夜の空と宇宙ステーションは、一覧の上の1行を押すと開きます。</li>
 <li><b>範囲</b>：何km先までの機体を出すか。遠くの機体まで見たいときは広くします（図鑑に入るのは10km以内とキャッチした機体だけです）。</li>
 <li><b>地上も</b>：空港の地上にいる機体も出します。</li>
 <li>地図の点線の輪は「10km（図鑑に入る範囲）」です。10km以内の機体には行き先と機種の名前が付きます。</li>
 <li>機体の色：青＝旅客機など、${tag('赤', '#c0392b')}＝軍用機、${tag('黄', '#e6a700')}＝夕日・朝日を浴びている機体。緑に光る機体は、いまキャッチできる機体です。</li></ul>`],
     ['detail', '機体の詳細と「この便に乗る」', `<ul><li>一覧や地図の機体をタップすると、写真（Planespotters.net）、行き先、高さ、速さ、窓から見える景色が出ます。</li>
 <li><b>この便に乗る</b>：その便の窓から見た景色を3Dで見られます。「左窓」「前方」「右窓」で向きを変え、「降りる」で戻ります。</li></ul>`],
-    ['sky', '空に向ける', `<ul><li>「空に向ける」を押し、スマホを写真を撮るように空へ向けます。画面の照準（真ん中の円）の方向にある機体・月・惑星・星の名前が出ます。</li>
+    ['sky', '空に向ける', `<ul><li>下の真ん中の「空に向ける」を押し、スマホを写真を撮るように空へ向けます。カメラ・星座・補正などのボタンは、空の画面の下の端に並んでいます（横にずらせます）。画面の照準（真ん中の円）の方向にある機体・月・惑星・星の名前が出ます。</li>
 <li>照準の機体をタップすると詳細が出ます。</li>
 <li><b>カメラ</b>：カメラの映像に重ねて表示します。<b>画角</b>はカメラの写る広さに合わせる調整です。</li>
 <li><b>補正（±5°）</b>：表示の方角がずれているときに直します。<b>方角を合わせる</b>（カメラON）：月や明るい星を十字に入れて押すと、自動で合わせます。</li>
@@ -76,7 +78,7 @@
     ['cd', '真上カウントダウンと知らせ', `<ul><li>見上げ角60°以上で真上近くを通る機体が10分以内に来ると、地図の左上に「あと1:40で真上付近」と出ます。残り30秒でオレンジ、真上を過ぎると赤の「いま真上！」になり、振動で知らせます（iPhone は振動しません）。</li>
 <li>帯を押すと、その機体を選びます。</li>
 <li>現在地の誤差が大きいとき（1km超）や、よその空にいるときは出しません。</li>
-<li>「軍用機を知らせる」「真上通過を知らせる」「真上カウントダウン」のチェックで、それぞれ入・切できます。</li></ul>`],
+<li>「設定」の「軍用機を知らせる」「真上通過を知らせる」「真上カウントダウン」で、それぞれ入・切できます。</li></ul>`],
     ['night', '夜の空（月・惑星・星座・宇宙ステーション）', `<ul><li>「空に向ける」の画面に、月（満ち欠けの形）、惑星、明るい星が出ます。空が暗くなると星座も出ます。</li>
 <li><b>星座</b>：「出し方：探す」では照準のまわりだけ線が見えます。線を照準に入れたまま2秒で名前が分かり、「見つけた星座」に記録されます（点はありません）。「全部」にすると全部の星座が出ます。</li>
 <li><b>宇宙ステーション</b>：位置と、肉眼で見える時刻を一覧の上に出し、5分前に知らせます。</li>
@@ -168,22 +170,26 @@
   // 手順（上から順に、まだ終わっていない最初のものを出す）。t：文、el：光らせる場所、ok：終わった印を付ける条件、on：出してよい条件
   const STEPS = [
     {id:'select', t:'<b>一覧の機体をタップ</b>してみましょう。写真・行き先・窓から見える景色が出ます。', el:() => document.querySelector('#list .card'), ok:() => !!sel, on:() => planes.length > 0},
-    {id:'sky', t:'<b>「空に向ける」</b>を押して、スマホを写真を撮るように空へ向けてみましょう。', el:() => $('skyBtn'), ok:() => sky, on:() => !noSensor()},
-    {id:'catch', t:'飛行機を<b>照準の円に2秒</b>入れるとキャッチ！ 緑に光る機体（地図）が狙い目です。見上げ角10°以上の機体ならキャッチできます。', el:() => sky ? $('scopeBox') : $('skyBtn'), ok:caughtAny, on:() => !noSensor()},
-    {id:'zukan', t:'<b>「図鑑」</b>を開いてみましょう。10km以内を通った機体とキャッチした機体の機種が集まります。', el:() => $('zukanBtn'), ok:() => H.done.zukanOpen, on:() => !sky},
-    {id:'day', t:'<b>「今日の空」</b>で、今日のスコアとキャッチのまとめが見られます。', el:() => $('dayBtn'), ok:() => H.done.dayOpen, on:() => !sky},
-    {id:'con', t:'空が暗くなりました。<b>「空に向ける」→「星座」</b>で、照準のまわりの星座を探してみましょう。線を照準に入れて2秒で名前が分かります。', el:() => sky ? $('conBtn') : $('skyBtn'), ok:() => H.done.conFound, on:() => night() && !noSensor() && !viewOnly()},
-    {id:'yoso', t:'<b>「世界の空港」</b>を押すと、世界の空港の空へ遊びに行けます（よその空）。', el:() => $('airBtn'), ok:() => viewOnly(), on:() => !sky},
-    {id:'back', t:'よその空でも「空に向ける」でキャッチできます（点数は「よその空ノート」に）。戻るときは<b>「現在地に戻す」</b>。', el:() => $('backBtn'), ok:() => H.done.yoso && !viewOnly() && !pickPos, on:() => !sky}];
+    {id:'sky', t:'下の真ん中の<b>「空に向ける」</b>を押して、スマホを写真を撮るように空へ向けてみましょう。', el:() => $('skyFab'), ok:() => sky, on:() => !noSensor()},
+    {id:'catch', t:'飛行機を<b>照準の円に2秒</b>入れるとキャッチ！ 緑に光る機体（地図）が狙い目です。見上げ角10°以上の機体ならキャッチできます。', el:() => sky ? $('scopeBox') : $('skyFab'), ok:caughtAny, on:() => !noSensor()},
+    {id:'zukan', t:'<b>「記録」→「図鑑」</b>を開いてみましょう。10km以内を通った機体とキャッチした機体の機種が集まります。', el:() => $('tile-zukan') || $('zukanBtn'), ok:() => H.done.zukanOpen, on:() => !sky},
+    {id:'day', t:'<b>「記録」→「今日の空」</b>で、今日のスコアとキャッチのまとめが見られます。', el:() => $('tile-day') || $('dayBtn'), ok:() => H.done.dayOpen, on:() => !sky},
+    {id:'con', t:'空が暗くなりました。<b>「空に向ける」→「星座」</b>で、照準のまわりの星座を探してみましょう。線を照準に入れて2秒で名前が分かります。', el:() => sky ? $('conBtn') : $('skyFab'), ok:() => H.done.conFound, on:() => night() && !noSensor() && !viewOnly()},
+    {id:'yoso', t:'<b>「よその空」→「世界の空港」</b>から、世界の空港の空へ遊びに行けます。', el:() => (document.querySelector('#airList button') || $('airBtn')), ok:() => viewOnly(), on:() => !sky},
+    {id:'back', t:'よその空でも「空に向ける」でキャッチできます（点数は「よその空ノート」に）。戻るときは地図の下の緑の帯の<b>「現在地に戻す」</b>。', el:() => ($('bandBack') && vis($('bandBack')) ? $('bandBack') : $('backBtn')), ok:() => H.done.yoso && !viewOnly() && !pickPos, on:() => !sky}];
   let tipKey = '', closedKey = '', hlEl = null, finishAt = 0;
+  // 見えないタブの中の部品なら、そのタブのボタンを光らせる（v35）
+  const reach = el => { const s = el && el.closest && el.closest('.tabsec'); return s && !s.classList.contains('cur') && $('tb-' + s.dataset.tab) ? $('tb-' + s.dataset.tab) : el; };
   function setTip(key, html, el) {
+    el = reach(el);
     if (hlEl && hlEl !== el) { hlEl.classList.remove('hl'); hlEl = null; }
     if (!key || key === closedKey) { tip.style.display = 'none'; tipKey = key || ''; return; }
     if (key !== tipKey) { $('tipText').innerHTML = html; tipKey = key; if (el && vis(el) && !sky && el.closest && el.closest('#panel')) el.scrollIntoView({block:'nearest'}); }
     tip.style.display = 'block';
     if (el && vis(el)) { el.classList.add('hl'); hlEl = el; }
   }
-  $('tipX').onclick = () => { closedKey = tipKey; setTip('', ''); };
+  // ×：レクチャーの手順なら、その手順は飛ばして次へ（v35）
+  $('tipX').onclick = () => { if (tipKey.startsWith('s:')) { H.done[tipKey.slice(2)] = 1; hSave(); } else closedKey = tipKey; setTip('', ''); };
   // 終わった印（画面を開いた・星座を見つけた）
   $('zukanBtn').addEventListener('click', () => { H.done.zukanOpen = 1; hSave(); });
   $('dayBtn').addEventListener('click', () => { H.done.dayOpen = 1; hSave(); });
@@ -200,7 +206,9 @@
       return setTip('cd', '<b>真上に来る便があります！</b> 帯の時間になったら見上げてください。帯を押すとその機体を選べます。', $('cdBar'));
     }
     const nvCard = document.querySelector('#list .nv');
-    if (nvCard && !H.ev.nv && !sky && H.done.catch) { // キャッチを覚えたあとに1回だけ（8秒）
+    const listCur = !$('tab-list') || $('tab-list').classList.contains('cur');
+    if (nvCard && !H.ev.nv && !sky && H.done.catch && !listCur && H.ev.nvAt) { H.ev.nv = 1; hSave(); } // 一度出たあとほかのタブへ移ったら終わり（v35）
+    if (nvCard && !H.ev.nv && !sky && H.done.catch && listCur) { // キャッチを覚えたあとに1回だけ（8秒）
       if (!H.ev.nvAt) H.ev.nvAt = Date.now();
       if (Date.now() - H.ev.nvAt > 8000) { H.ev.nv = 1; hSave(); }
       return setTip('nv', '<b>「新都市」「新路線」</b>の印は、まだキャッチしたことのない行き先・路線の便です。キャッチするとボーナス点！', nvCard.closest('.card'));
@@ -220,7 +228,7 @@
     if (!H.done.finish && STEPS.every(s => H.done[s.id] || !must(s))) {
       if (!finishAt) finishAt = Date.now();
       if (Date.now() - finishAt > 10000) { H.done.finish = 1; H.on = false; $('helpChk').checked = false; hSave(); return setTip('', ''); }
-      return setTip('finish', '<b>レクチャー完了！</b> いつでも「？ 使い方」で説明を見られます。使い方ナビはまもなく自動で OFF になります。', $('helpAll'));
+      return setTip('finish', '<b>レクチャー完了！</b> いつでも「設定」→「？ 使い方」で説明を見られます。使い方ナビはまもなく自動で OFF になります。', $('helpAll'));
     }
     setTip('', '');
   }

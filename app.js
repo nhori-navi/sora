@@ -887,6 +887,13 @@ function moonPhaseName(t) {
   const names = ['新月', '三日月', '上弦の月', '十三夜', '満月', '寝待月', '下弦の月', '有明の月'];
   return names[Math.floor(((a + 22.5) % 360) / 45)];
 }
+// 今夜の空の時刻の書き方（v36：よその空では「いまから何時間後」で出す。現地の時刻は時差・夏時間が分からないため）
+let nightRel = false;
+function relT(t) {
+  const m = Math.max(0, Math.round((t - Date.now()) / 600000) * 10);
+  return m < 60 ? `約${m}分後` : `約${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}後`;
+}
+const nightAtT = t => nightRel ? relT(t) : hm(t);
 // 今夜見える月・惑星（これから16時間のうち、暗くて高さ10°以上の時間帯）
 function renderNight() {
   if (typeof Astronomy === 'undefined' || !pos) { $('night').textContent = ''; return; }
@@ -904,11 +911,11 @@ function renderNight() {
     }
     if (s == null) return;
     const label = b === 'Moon' ? `月（${moonPhaseName(s)}）` : BODY_JA[b];
-    items.push({s, text:`${label}：${s <= now + 60000 ? 'いま' : hm(s) + 'から'}${dirName(az)}の空（〜${hm(e)}）`});
+    items.push({s, text:`${label}：${s <= now + 60000 ? 'いま' : nightAtT(s) + 'から'}${dirName(az)}の空（〜${nightAtT(e)}${nightRel ? 'まで' : ''}）`});
   });
   items.sort((x, y) => x.s - y.s);
   moonNight(items, now, obs);
-  $('night').innerHTML = '<b>今夜の空</b>　' + (items.length ? items.map(i => esc(i.text)).join('<br>') : '今夜は月や惑星が見えにくい夜です');
+  $('night').innerHTML = (nightRel ? '<b>今夜の空</b>（よその空・いまからの時間）　' : '<b>今夜の空</b>　') + (items.length ? items.map(i => esc(i.text)).join('<br>') : '今夜は月や惑星が見えにくい夜です');
   nightAt = now; nightPos = pos.slice();
 }
 function skyTick() {
@@ -3139,6 +3146,39 @@ function noveltyHtml(p) {
   document.head.appendChild(st);
 }
 
+// ---------- よその空の夜と昼（v36） ----------
+// (1) 今夜の空：よその空にいる間は、時刻ではなく「いまから何時間後」で出す（renderNight の中で nightRel を見る）
+// (2) 空に向けた画面：よその空で現地が明るいときは、星と星座が見えない理由と、暗くなるまでの時間を出す
+const renderNightV10 = renderNight;
+renderNight = function () { nightRel = viewOnly(); return renderNightV10(); };
+let yosoDark = {t:0, k:'', txt:''};
+function yosoSkyNote() {
+  if (!viewOnly() || !pos) return '';
+  const now = Date.now(), k = pos.join(',');
+  if (yosoDark.k === k && now - yosoDark.t < 60000) return yosoDark.txt;
+  const el = sunAt(pos[1], pos[0], new Date(now)).el;
+  let txt = '';
+  if (el >= -6) {
+    let m = 10;
+    while (m <= 1440 && sunAt(pos[1], pos[0], new Date(now + m * 60000)).el >= -6) m += 10;
+    txt = (el > 0 ? '現地はいま昼なので' : '現地はまだ明るいので') + '、星と星座は見えません' + (m > 1440 ? '' : '\n暗くなるのは' + relT(now + m * 60000));
+  }
+  yosoDark = {t:now, k, txt};
+  return txt;
+}
+const drawScopeV24 = drawScope;
+drawScope = function () {
+  drawScopeV24();
+  const txt = head != null && yosoSkyNote();
+  if (!txt) return;
+  const c = $('scope'), W = $('scopeBox').clientWidth, g = c.getContext('2d'), lines = txt.split('\n');
+  g.save(); g.shadowBlur = 0; g.font = 'bold 12px sans-serif'; g.textAlign = 'left';
+  const w = Math.min(W - 128, Math.max(...lines.map(s => g.measureText(s).width)) + 16);
+  g.fillStyle = 'rgba(46,125,107,.9)'; g.fillRect(8, 30, w, 8 + lines.length * 17);
+  g.fillStyle = '#fff'; lines.forEach((s, i) => g.fillText(fitText(g, s, w - 14), 15, 47 + i * 17));
+  g.restore();
+};
+
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
 // 空に向ける・図鑑・都市・今日の空・機窓ビューを開くたびにブラウザの履歴を1つ積み、
@@ -3286,7 +3326,7 @@ function moonNight(items, now, obs) {
     if (s) ev.push({t:s.date.getTime(), k:'月の入り'});
     ev.sort((a, b) => a.t - b.t);
     const see = old ? old.text.replace(/^月（[^）]*）：/, '') : '今夜は見えにくい';
-    const text = `月（${moonPhaseName(now)}${age ? '・月齢' + age : ''}）：${see}　` + ev.map(e => `${e.k} ${day(e.t)}${hm(e.t)}`).join('　');
+    const text = `月（${moonPhaseName(now)}${age ? '・月齢' + age : ''}）：${see}　` + ev.map(e => `${e.k} ${nightRel ? relT(e.t) : day(e.t) + hm(e.t)}`).join('　');
     items.unshift({s:old ? old.s : now, text});
   } catch (e) {}
 }

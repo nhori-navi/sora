@@ -1,10 +1,11 @@
-// SoraMiru の画面の骨組み（v35 → v38）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
+// SoraMiru の画面の骨組み（v35 → v39）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
 // v36：よその空の帯を「空」タブの一番上へ／夜は暗い画面（設定で 自動・いつも明るい・いつも暗い）／地図と一覧の境目を指でずらす／
 //      記録の画面の見出しを固定・「記録を消す」を下へ
 // v37：版の表示（設定・使い方）と、古いファイルが混ざったときの知らせ／スマホを横向きにしたときの並べ方
+// v39：ホーム画面アプリ（PWA）：サービスワーカーの登録、設定の「ホーム画面に追加」、起動中の表示、画面の上の色（theme-color）を明るさに合わせる
 // v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 38;
+(window.SORA_FV = window.SORA_FV || {}).ui = 39;
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -124,6 +125,10 @@ body.skyOn #skyTextBox{display:block}
   body.skyOn #skyNote.on{display:block}
 }
 #skyNote{display:none;position:absolute;left:8px;right:8px;bottom:98px;z-index:4;margin:0 auto;max-width:560px;padding:6px 10px;border-radius:10px;background:rgba(192,57,43,.88);color:#fff;font-size:13px;line-height:1.45;text-align:center;pointer-events:none}
+/* ホーム画面アプリ（v39） */
+#appRow{margin-top:8px;font-size:13px;line-height:1.5}
+#appRow button{margin:4px 0 0}
+#appHow{display:none;margin-top:6px;color:var(--sub)}
 /* 版の表示（v37） */
 #verBox{font-size:14px}
 #verBox b{color:var(--acc)}
@@ -283,7 +288,7 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   const bk = document.querySelector('.bk'); bk.querySelector('b').remove(); bk.querySelector('br') && bk.querySelector('br').remove(); bk.classList.add('box');
   tSet.appendChild(bk);
   tSet.appendChild(el('div', {className:'sech'}, 'このアプリについて'));
-  tSet.appendChild(el('div', {id:'verBox', className:'box'}, '<div id="verT"></div><div id="verWarn"></div>'));
+  tSet.appendChild(el('div', {id:'verBox', className:'box'}, '<div id="verT"></div><div id="verWarn"></div><div id="appRow"><div id="appState"></div><button id="appAdd" class="pri">📲 ホーム画面に追加</button><div id="appHow"></div></div>'));
   const src = [...panel.children].find(x => /機体データ：adsb\.lol/.test(x.textContent)); if (src) { src.classList.add('box'); tSet.appendChild(src); }
 
   rowA.remove(); rowB.remove();
@@ -369,6 +374,7 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   function applyTheme() {
     const m = themeSel.value, dark = m === 'dark' || (m === 'auto' && nightHere());
     if (document.body.classList.contains('dark') !== dark) document.body.classList.toggle('dark', dark);
+    const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.setAttribute('content', dark ? '#0e1626' : '#1f3b73'); // 画面の上の色（v39）
   }
   themeSel.onchange = () => { lsSet('sora_theme', themeSel.value); applyTheme(); };
   applyTheme(); setInterval(applyTheme, 60000);
@@ -417,6 +423,29 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
     skyNote.textContent = usual ? '' : t;
     skyNote.classList.toggle('on', !usual);
   }, 500);
+
+  // ---------- ホーム画面アプリ（v39） ----------
+  // サービスワーカー（sw.js）は /sora/ の中のファイルだけを扱う。登録できなくても普通に使える
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  const isApp = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let installEv = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; appUi(); });
+  window.addEventListener('appinstalled', () => { installEv = null; appUi(); alertMsg('ホーム画面に SoraMiru を追加しました', null, false); });
+  function appUi() {
+    const st = $('appState'), btn = $('appAdd'), how = $('appHow');
+    if (isApp()) { st.textContent = '📱 ホーム画面のアプリとして起動中'; btn.style.display = 'none'; how.style.display = 'none'; return; }
+    st.textContent = 'ホーム画面に追加すると、アドレスの帯のない画面で開けます';
+    btn.style.display = '';
+    how.innerHTML = isIOS
+      ? 'iPhone：Safari の下の<b>共有ボタン</b>（四角から上向きの矢印）→<b>「ホーム画面に追加」</b>。※iPhone ではホーム画面のアプリと Safari で記録の置き場所が別です。Safari で「記録を書き出す」→ アプリで「記録を読み込む」で移せます'
+      : installEv ? '' : 'ボタンで出ないときは、Chrome の右上の<b>︙</b>→<b>「ホーム画面に追加」</b>（または「アプリをインストール」）';
+  }
+  $('appAdd').onclick = async () => {
+    if (installEv) { installEv.prompt(); try { await installEv.userChoice; } catch (e) {} installEv = null; appUi(); return; }
+    $('appHow').style.display = 'block';
+  };
+  appUi();
 
   // ---------- 版の表示と、古いファイルが混ざっていないかの確認（v37） ----------
   // index.html の版（SORA_V）と、各ファイルが書き込んだ版（SORA_FV）をくらべる。合わなければ設定と知らせで伝える

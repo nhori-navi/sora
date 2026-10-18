@@ -1,0 +1,18 @@
+{
+  "name": "SoraMiru",
+  "short_name": "SoraMiru",
+  "description": "見上げた飛行機の行き先と、月・惑星・星座まで、いまの空を楽しむアプリ",
+  "id": "/sora/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1b2a",
+  "theme_color": "#1f3b73",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

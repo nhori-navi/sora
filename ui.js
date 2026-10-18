@@ -1,9 +1,10 @@
-// SoraMiru の画面の骨組み（v35 → v37）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
+// SoraMiru の画面の骨組み（v35 → v38）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
 // v36：よその空の帯を「空」タブの一番上へ／夜は暗い画面（設定で 自動・いつも明るい・いつも暗い）／地図と一覧の境目を指でずらす／
 //      記録の画面の見出しを固定・「記録を消す」を下へ
 // v37：版の表示（設定・使い方）と、古いファイルが混ざったときの知らせ／スマホを横向きにしたときの並べ方
+// v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 37;
+(window.SORA_FV = window.SORA_FV || {}).ui = 38;
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -117,7 +118,12 @@ body.skyOn #skyTextBox{display:block}
   body.skyOn #panel{top:0}
   #skyCtl{bottom:50px}
   #skyFab .fab{width:52px;height:52px;margin-top:-18px;font-size:24px}
+  /* v38：空に向けたときは空の画面だけ（パネル・タブなし） */
+  body.skyOn #scopeBox{right:0}
+  body.skyOn #panel,body.skyOn #tabbar{display:none}
+  body.skyOn #skyNote.on{display:block}
 }
+#skyNote{display:none;position:absolute;left:8px;right:8px;bottom:98px;z-index:4;margin:0 auto;max-width:560px;padding:6px 10px;border-radius:10px;background:rgba(192,57,43,.88);color:#fff;font-size:13px;line-height:1.45;text-align:center;pointer-events:none}
 /* 版の表示（v37） */
 #verBox{font-size:14px}
 #verBox b{color:var(--acc)}
@@ -400,6 +406,18 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   setTimeout(mapResize, 300);
   window.addEventListener('orientationchange', () => setTimeout(mapResize, 300));
 
+  // ---------- 横向きで空に向けたときの注意の文（v38） ----------
+  // ふだんの説明（SKY_HINT・よその空の説明）は出さず、センサー・許可・カメラなどの注意のときだけ空の画面に重ねる
+  const skyNote = el('div', {id:'skyNote'});
+  $('scopeBox').appendChild(skyNote);
+  setInterval(() => {
+    if (!sky) return;
+    const t = ($('skyInfo').textContent || '').trim();
+    const usual = !t || (typeof SKY_HINT !== 'undefined' && t === SKY_HINT) || /^よその空です。/.test(t);
+    skyNote.textContent = usual ? '' : t;
+    skyNote.classList.toggle('on', !usual);
+  }, 500);
+
   // ---------- 版の表示と、古いファイルが混ざっていないかの確認（v37） ----------
   // index.html の版（SORA_V）と、各ファイルが書き込んだ版（SORA_FV）をくらべる。合わなければ設定と知らせで伝える
   const VER_FILES = [['app', 'app.js'], ['ui', 'ui.js'], ['help', 'help.js'], ['anchors', 'art/anchors.js'], ['conart', 'conart.js']];
@@ -408,10 +426,11 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
     $('verT').innerHTML = `<b>${esc(label)}</b>`;
     if ($('helpVer')) $('helpVer').textContent = label;
     if (!V) return;
-    const bad = VER_FILES.filter(([k]) => F[k] !== V).map(([k, f]) => f + '：' + (F[k] ? 'v' + F[k] : '古い版か、読み込めていません'));
+    const NEED = window.SORA_NEED || {}; // v38：ファイルごとの版（変えたファイルだけ番号が上がる）
+    const bad = VER_FILES.filter(([k]) => F[k] !== (NEED[k] || V)).map(([k, f]) => f + '：' + (F[k] ? 'v' + F[k] : '古い版か、読み込めていません'));
     const w = $('verWarn');
     if (!bad.length) { w.style.display = 'none'; return; }
-    w.innerHTML = '⚠ 一部のファイルが v' + V + ' になっていません（' + esc(bad.join('、')) + '）。GitHub へのアップロードを確かめて、少し待ってから開き直してください';
+    w.innerHTML = '⚠ 一部のファイルが新しい版になっていません（' + esc(bad.join('、')) + '）。GitHub へのアップロードを確かめて、少し待ってから開き直してください';
     w.style.display = 'block';
     try { if (sessionStorage.getItem('sora_verwarn') !== bad.join()) { sessionStorage.setItem('sora_verwarn', bad.join()); alertMsg('⚠ 一部のファイルが古い版です（' + bad.join('、') + '）。少し待ってから開き直してください', null, false); } } catch (e) {}
   }

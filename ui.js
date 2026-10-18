@@ -1,7 +1,9 @@
-// SoraMiru の画面の骨組み（v35 → v36）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
+// SoraMiru の画面の骨組み（v35 → v37）：下のタブ（空・記録・空に向ける・よその空・設定）、空に向けた画面の操作の並べ替え、見た目
 // v36：よその空の帯を「空」タブの一番上へ／夜は暗い画面（設定で 自動・いつも明るい・いつも暗い）／地図と一覧の境目を指でずらす／
 //      記録の画面の見出しを固定・「記録を消す」を下へ
+// v37：版の表示（設定・使い方）と、古いファイルが混ざったときの知らせ／スマホを横向きにしたときの並べ方
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
+(window.SORA_FV = window.SORA_FV || {}).ui = 37;
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -105,6 +107,22 @@ body.skyOn #skyTextBox{display:block}
   body.skyOn #scopeBox{height:auto}
   body.skyOn #panel{top:0}
 }
+/* ---------- スマホを横向きにしたとき（v37）：地図・空の画面を左、パネルとタブを右に並べる ---------- */
+@media (orientation:landscape) and (max-height:520px) and (max-width:899px){
+  #map,#scopeBox{height:auto;bottom:0;right:340px}
+  #panel{top:0;left:auto;width:340px;bottom:var(--tab);padding-top:8px;box-shadow:-2px 0 8px rgba(0,0,0,.12)}
+  #tabbar{left:auto;width:340px}
+  #grip{display:none}
+  body.skyOn #scopeBox{height:auto;bottom:0}
+  body.skyOn #panel{top:0}
+  #skyCtl{bottom:50px}
+  #skyFab .fab{width:52px;height:52px;margin-top:-18px;font-size:24px}
+}
+/* 版の表示（v37） */
+#verBox{font-size:14px}
+#verBox b{color:var(--acc)}
+#verWarn{display:none;margin-top:6px;padding:6px 8px;border-radius:8px;background:#fdecea;color:#a12d22;font-size:13px;line-height:1.5}
+body.dark #verWarn{background:#3a1d22;color:#ff9b8f}
 /* ---------- 暗い画面（v36） ---------- */
 body.dark{--bg:#0e1626;--card:#172238;--text:#e2e8f3;--sub:#9aa8c0;--line:#2c3a55;--acc:#9dbcff;--navy:#2c4f94;color:var(--text);color-scheme:dark}
 body.dark #panel{color:var(--text);box-shadow:0 -2px 8px rgba(0,0,0,.5)}
@@ -259,6 +277,7 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   const bk = document.querySelector('.bk'); bk.querySelector('b').remove(); bk.querySelector('br') && bk.querySelector('br').remove(); bk.classList.add('box');
   tSet.appendChild(bk);
   tSet.appendChild(el('div', {className:'sech'}, 'このアプリについて'));
+  tSet.appendChild(el('div', {id:'verBox', className:'box'}, '<div id="verT"></div><div id="verWarn"></div>'));
   const src = [...panel.children].find(x => /機体データ：adsb\.lol/.test(x.textContent)); if (src) { src.classList.add('box'); tSet.appendChild(src); }
 
   rowA.remove(); rowB.remove();
@@ -379,4 +398,22 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   }, 500);
   fabText();
   setTimeout(mapResize, 300);
+  window.addEventListener('orientationchange', () => setTimeout(mapResize, 300));
+
+  // ---------- 版の表示と、古いファイルが混ざっていないかの確認（v37） ----------
+  // index.html の版（SORA_V）と、各ファイルが書き込んだ版（SORA_FV）をくらべる。合わなければ設定と知らせで伝える
+  const VER_FILES = [['app', 'app.js'], ['ui', 'ui.js'], ['help', 'help.js'], ['anchors', 'art/anchors.js'], ['conart', 'conart.js']];
+  function verCheck() {
+    const V = window.SORA_V, F = window.SORA_FV || {}, label = V ? `SoraMiru　試作 v${V}（${window.SORA_DATE || ''}）` : 'SoraMiru　試作';
+    $('verT').innerHTML = `<b>${esc(label)}</b>`;
+    if ($('helpVer')) $('helpVer').textContent = label;
+    if (!V) return;
+    const bad = VER_FILES.filter(([k]) => F[k] !== V).map(([k, f]) => f + '：' + (F[k] ? 'v' + F[k] : '古い版か、読み込めていません'));
+    const w = $('verWarn');
+    if (!bad.length) { w.style.display = 'none'; return; }
+    w.innerHTML = '⚠ 一部のファイルが v' + V + ' になっていません（' + esc(bad.join('、')) + '）。GitHub へのアップロードを確かめて、少し待ってから開き直してください';
+    w.style.display = 'block';
+    try { if (sessionStorage.getItem('sora_verwarn') !== bad.join()) { sessionStorage.setItem('sora_verwarn', bad.join()); alertMsg('⚠ 一部のファイルが古い版です（' + bad.join('、') + '）。少し待ってから開き直してください', null, false); } } catch (e) {}
+  }
+  if (document.readyState === 'complete') setTimeout(verCheck, 500); else window.addEventListener('load', () => setTimeout(verCheck, 500));
 })();

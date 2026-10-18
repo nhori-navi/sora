@@ -1,4 +1,5 @@
 // 見上げアプリの動き（中継のアドレスは config.js、辞書は data.js）
+(window.SORA_FV = window.SORA_FV || {}).app = 37; // 版の番号（v37 から。ui.js が index.html の版とくらべる）
 const RELAYS = [typeof RELAY === 'string' ? RELAY : '', typeof RELAY2 === 'string' ? RELAY2 : '']
   .map(u => u.trim().replace(/\/+$/, '')).filter(u => /^https:\/\//.test(u) && !u.includes('〇'));
 const RELAY_CF = RELAYS.find(u => !u.includes('script.google.com')) || '';

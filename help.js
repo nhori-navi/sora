@@ -1,5 +1,6 @@
-// SoraMiru の使い方（v34 → v36）：はじめての紹介・使い方ナビ（レクチャー）・ヘルプ（「使い方」と各欄の「？」）
+// SoraMiru の使い方（v34 → v37）：はじめての紹介・使い方ナビ（レクチャー）・ヘルプ（「使い方」と各欄の「？」）
 // app.js のあとに読む。app.js の変数（sky・sel・pos・catchData・yoso など）をそのまま使う
+(window.SORA_FV = window.SORA_FV || {}).help = 37;
 (function () {
   const H = lsGet('sora_help_v1', null) || {};
   H.done = H.done || {}; H.ev = H.ev || {};
@@ -84,6 +85,7 @@
     ['night', '夜の空（月・惑星・星座・宇宙ステーション）', `<ul><li>「空に向ける」の画面に、月（満ち欠けの形）、惑星、明るい星が出ます。空が暗くなると星座も出ます。</li>
 <li><b>星座</b>：「出し方：探す」では照準のまわりだけ線が見えます。線を照準に入れたまま2秒で名前が分かり、「見つけた星座」に記録されます（点はありません）。「全部」にすると全部の星座が出ます。</li>
 <li><b>宇宙ステーション</b>：位置と、肉眼で見える時刻を一覧の上に出し、5分前に知らせます。</li>
+<li><b>星座絵</b>：空に向けた画面で、星座の線の下に星座の絵（オリオン座なら狩人の姿）を薄く重ねます。「星座絵」ボタンで出す・出さないを切り替えます。「出し方：探す」では、見つけた星座の絵が8秒ほど全体に出て、そのあとは照準のまわりだけに出ます。「全部」では見えている星座の絵を全部出します。絵：Johan Meuris（Stellarium、Free Art License）。</li>
 <li><b>今夜の空</b>：今夜見える月・惑星と時刻です。よその空にいる間は、いまから何時間後かで出します（現地の時刻ではありません）。</li></ul>`],
     ['notes', '図鑑・都市・今日の空・バッジ・シェア', `<ul><li><b>図鑑</b>：10km以内を通った機体と、キャッチした機体の機種です。「捕」はキャッチした回数とLv。機種名を押すと説明と、自分がキャッチした機体の写真が出ます。</li>
 <li><b>都市</b>：キャッチした旅客機の行き先の都市と、出発地→行き先の線（地球儀）。「線を消す」で線だけを消して描き直せます。</li>
@@ -103,7 +105,8 @@
     ['trouble', 'うまくいかないとき', `<ul><li><b>行き先が「調べ中」のまま</b>：画面下の「行き先を調べ中 〇機」のあとの（　）に理由が出ます。混んでいるときは少し待つと減っていきます。データに登録のない便は「行き先不明」になります。</li>
 <li><b>機体が出ない</b>：電波の状態を確かめ、少し待ってください。前の表示を続けながら、3秒ごとにやり直します。</li>
 <li><b>方角がずれる</b>：スマホを8の字に振る、「方角を合わせる」、「補正」で直してください。</li></ul>
-<p class="small">機体データ：adsb.lol（ODbL）／行き先：Virtual Radar Server（CC0）／写真：Planespotters.net／地名：国土地理院・© OpenStreetMap contributors／天体：Astronomy Engine／星座の線：d3-celestial</p>`]];
+<p class="small">機体データ：adsb.lol（ODbL）／行き先：Virtual Radar Server（CC0）／写真：Planespotters.net／地名：国土地理院・© OpenStreetMap contributors／天体：Astronomy Engine／星座の線：d3-celestial／星座絵：Johan Meuris（Stellarium・Free Art License、<a href="https://artlibre.org/licence/lal/en/" target="_blank" rel="noopener">ライセンス</a>）・基準点：Stellarium（CC BY-SA）</p>
+<p class="small" id="helpVer"></p>`]];
   const box = document.createElement('div'); box.id = 'helpBox';
   box.innerHTML = '<div class="ovh"><button id="helpClose">← 閉じる</button><b>SoraMiru の使い方</b></div>' +
     SEC.map(s => `<details id="h-${s[0]}"><summary>${s[1]}</summary><div class="hb">${s[2]}</div></details>`).join('') +

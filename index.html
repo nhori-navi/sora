@@ -173,14 +173,17 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div id="err" class="small" style="color:#c00"></div>
   <div class="small"><span id="upd"></span></div>
   <div class="bk"><b>記録の保存</b><br><button id="bkOut">記録を書き出す</button><button id="bkIn">記録を読み込む</button><input type="file" id="bkFile" accept=".json,application/json" hidden><div id="bkInfo" class="small"></div></div>
-  <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
+  <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　星座絵：Johan Meuris（Stellarium・Free Art License）・基準点：Stellarium（CC BY-SA）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script src="config.js?v=36"></script>
-<script src="data.js?v=36"></script>
-<script src="constellations.js?v=36"></script>
-<script src="app.js?v=36"></script>
-<script src="ui.js?v=36"></script>
-<script src="help.js?v=36"></script>
+<script>window.SORA_V = 37; window.SORA_DATE = '2026-10-18'; window.SORA_FV = {};</script>
+<script src="config.js?v=37"></script>
+<script src="data.js?v=37"></script>
+<script src="constellations.js?v=37"></script>
+<script src="app.js?v=37"></script>
+<script src="ui.js?v=37"></script>
+<script src="help.js?v=37"></script>
+<script src="art/anchors.js?v=37"></script>
+<script src="conart.js?v=37"></script>
 </body>
 </html>

@@ -1,1 +1,20 @@
+SoraMiru の星座絵について（art フォルダー）
 
+■ 星座絵（このフォルダーの .webp ファイル 30枚）
+作者：Johan Meuris（http://www.johanmeuris.eu/）
+入手先：Stellarium の西洋の星座（Stellarium skycultures "western"）
+  https://github.com/Stellarium/stellarium-skycultures/tree/master/western/illustrations
+ライセンス：Free Art License（フリー・アート・ライセンス）
+  ライセンスの全文：https://artlibre.org/licence/lal/en/
+  （Stellarium の説明 western/description.md「Illustrations by Johan Meuris」「Illustrations: Free Art License」、
+    Stellarium 本体の CREDITS.md 4.10「Constellation art … created by Johan Meuris … released under the Free Art License」）
+改変：していません（入手したファイルをそのまま置いています）。
+  アプリの中では、黒い部分が見えなくなる重ね方（画面の合成）と透明度で、表示のときだけ薄く重ねています。
+
+■ 基準点のデータ（anchors.js）
+元のデータ：Stellarium skycultures western/index.json（Text and data: CC BY-SA）
+星の位置：d3-celestial（Copyright (c) 2015, Olaf Frohn. BSD 3-Clause License）
+anchors.js は CC BY-SA で公開します。
+
+■ アプリ本体（このフォルダーの外のファイル）
+星座絵とは別の作品です。星座絵はこのフォルダーから単独で取り出して使えます。

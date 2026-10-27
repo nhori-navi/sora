@@ -1,8 +1,8 @@
-// TenMiru：v40 MichiMiru の Android アプリの中で、MichiMiru の上に重ねて開いているときだけ動く部分（Chrome では何もしない）
+// TenMiru：v40（v41：MichiMiru 版23 の「戻る帯」があるときは 🚶 を出さない）MichiMiru の Android アプリの中で、MichiMiru の上に重ねて開いているときだけ動く部分（Chrome では何もしない）
 // ・左上に「🚶」（MichiMiru に戻る）。スマホの「戻る」は、中の画面を閉じてから MichiMiru に戻る
 // ・書き出し・シェアカードの画像の保存は、MichiMiru に頼んでスマホの「Documents」フォルダーへ（アプリの中ではダウンロードが使えないため）
 // ・宇宙ステーションの「見える通過」を計算したら、MichiMiru に渡してスマホの通知を予約する（アプリを閉じていても時刻に出る）
-(window.SORA_FV = window.SORA_FV || {}).inapp = 40;
+(window.SORA_FV = window.SORA_FV || {}).inapp = 41;
 const IN_MICHI = (() => { try { return window.parent !== window && typeof window.parent.miruClose === 'function'; } catch (e) { return false; } })();
 (function () {
   if (!IN_MICHI) return;
@@ -16,7 +16,7 @@ const IN_MICHI = (() => { try { return window.parent !== window && typeof window
   const b = document.createElement('button');
   b.id = 'miruBack'; b.type = 'button'; b.title = 'MichiMiru に戻る'; b.textContent = '🚶';
   b.onclick = () => { try { P.miruClose(); } catch (e) {} };
-  document.body.appendChild(b);
+  if (!P.miruStrip) document.body.appendChild(b); // v41：MichiMiru 版23 からは画面の上の緑の帯で戻る
   // ダウンロード（書き出し・シェアカードの画像）を MichiMiru の保存に回す
   const click = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
@@ -38,7 +38,7 @@ const IN_MICHI = (() => { try { return window.parent !== window && typeof window
   // 設定の「ホーム画面のアプリ」の欄
   const appLine = () => {
     const s = document.getElementById('appState'), a = document.getElementById('appAdd'), h = document.getElementById('appHow');
-    if (s) s.textContent = '📱 MichiMiru アプリの中で開いています（左上の「🚶」で MichiMiru に戻ります）。宇宙ステーションの通過は、スマホの通知で予約します';
+    if (s) s.textContent = '📱 MichiMiru アプリの中で開いています（' + (P.miruStrip ? '画面の上の緑の帯' : '左上の「🚶」') + 'で MichiMiru に戻ります）。宇宙ステーションの通過は、スマホの通知で予約します';
     if (a) a.style.display = 'none';
     if (h) h.style.display = 'none';
   };

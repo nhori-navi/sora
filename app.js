@@ -1,5 +1,5 @@
 // 見上げアプリの動き（中継のアドレスは config.js、辞書は data.js）
-(window.SORA_FV = window.SORA_FV || {}).app = 37; // 版の番号（v37 から。ui.js が index.html の版とくらべる）
+(window.SORA_FV = window.SORA_FV || {}).app = 42; // 版の番号（v37 から。ui.js が index.html の版とくらべる。v42：宇宙ステーションの通過を sora_iss_v1 に残す）
 const RELAYS = [typeof RELAY === 'string' ? RELAY : '', typeof RELAY2 === 'string' ? RELAY2 : '']
   .map(u => u.trim().replace(/\/+$/, '')).filter(u => /^https:\/\//.test(u) && !u.includes('〇'));
 const RELAY_CF = RELAYS.find(u => !u.includes('script.google.com')) || '';
@@ -715,6 +715,8 @@ async function computePasses() {
   if (cur) passes.push(cur);
   issPasses = passes.filter(p => p.e - p.s >= 40000);
   issPassAt = Date.now(); issPassPos = pos.slice(); issBusy = false;
+  // v42：MichiMiru（版32〜）の「今日のおすすめ」が読む。取り直せるので書き出しには入れない
+  lsSet('sora_iss_v1', {t:issPassAt, p:[+pos[0].toFixed(3), +pos[1].toFixed(3)], list:issPasses.map(p => ({s:p.s, e:p.e, saz:Math.round(p.saz), eaz:Math.round(p.eaz), max:Math.round(p.max)}))});
   renderIss();
 }
 const hm = t => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
@@ -2072,7 +2074,7 @@ drawScope = function () {
 
 // ---------- 記録の書き出し・読み込み（v20） ----------
 // 記録（sora_ で始まる保存）を1つのファイルにまとめて書き出し、別の端末や新しいアドレスで読み込めるようにする
-const BK_SKIP = ['sora_routes_v1', 'sora_tle', 'sora_bk_last']; // 取り直せる一時保存と、書き出した日の印は入れない
+const BK_SKIP = ['sora_routes_v1', 'sora_tle', 'sora_bk_last', 'sora_iss_v1']; // 取り直せる一時保存と、書き出した日の印は入れない
 let bkLock = false, lsWarnAt = 0;
 // 保存に失敗したら知らせる（10分に1回まで）。読み込みの最中は、いまの記録で上書きしないよう保存を止める
 lsSet = function (k, v) {

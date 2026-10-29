@@ -5,7 +5,7 @@
 // v39：ホーム画面アプリ（PWA）：サービスワーカーの登録、設定の「ホーム画面に追加」、起動中の表示、画面の上の色（theme-color）を明るさに合わせる
 // v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 39;
+(window.SORA_FV = window.SORA_FV || {}).ui = 43;
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -371,14 +371,24 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   const themeSel = $('themeSel');
   themeSel.value = ['auto', 'light', 'dark'].includes(lsGet('sora_theme', 'auto')) ? lsGet('sora_theme', 'auto') : 'auto';
   function nightHere() { try { const h = realHome(); return sunAt(h[1], h[0], new Date()).el < -0.83; } catch (e) { return false; } }
-  function applyTheme() {
-    const m = themeSel.value, dark = m === 'dark' || (m === 'auto' && nightHere());
+  // v43：MichiMiru アプリの中では、MichiMiru の画面の明るさに合わせる（MichiMiru 版37 が miruThemeSet で知らせる）
+  const michiTheme = () => { try { const P = window.parent; if (P !== window && typeof P.miruTheme === 'function') return P.miruTheme(); } catch (e) {} return null; };
+  if (michiTheme()) {
+    themeSel.disabled = true;
+    const n = el('div', {className: 'small', id: 'themeMichi'}, 'MichiMiru アプリの中では、MichiMiru の「画面の明るさ」に合わせます（ここで選んだものは Chrome で開いたときに使います）');
+    themeSel.parentNode.appendChild(n);
+  }
+  function applyTheme(t) {
+    const mt = (t && typeof t.dark === 'boolean') ? t : michiTheme();
+    const m = themeSel.value, dark = mt ? mt.dark : (m === 'dark' || (m === 'auto' && nightHere()));
     if (document.body.classList.contains('dark') !== dark) document.body.classList.toggle('dark', dark);
     const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.setAttribute('content', dark ? '#0e1626' : '#1f3b73'); // 画面の上の色（v39）
   }
   themeSel.onchange = () => { lsSet('sora_theme', themeSel.value); applyTheme(); };
   applyTheme(); setInterval(applyTheme, 60000);
   window.applyTheme = applyTheme;
+  window.miruThemeSet = t => applyTheme(t);
+  document.documentElement.classList.remove('predark');
 
   // ---------- 状態に合わせて ----------
   let lastSel = sel, lastPick = JSON.stringify(pickPos), lastSky = sky, lastRow = '', lastHome = '';

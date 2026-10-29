@@ -5,6 +5,9 @@
 <title>SoraMiru</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="theme-color" content="#1f3b73">
+<script>/* v43：MichiMiru アプリの中では、描き始める前に MichiMiru の画面の明るさに合わせる（白く光らないように） */
+try { var P = window.parent; if (P !== window && typeof P.miruTheme === 'function' && P.miruTheme().dark) document.documentElement.classList.add('predark'); } catch (e) {}</script>
+<style>html.predark, html.predark body { background: #0e1626; }</style>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -184,14 +187,14 @@ body.skyOn #cdBar{top:28px;max-width:calc(100% - 130px)}
   <div class="small">機体データ：adsb.lol（ODbL・中継経由）　行き先：Virtual Radar Server（adsb.lol経由・CC0）　写真：Planespotters.net　宇宙ステーションの軌道：CelesTrak ほか　天体の計算：Astronomy Engine　星座の線：d3-celestial（Olaf Frohn）　星座絵：Johan Meuris（Stellarium・Free Art License）・基準点：Stellarium（CC BY-SA）　地名：国土地理院・© OpenStreetMap contributors（よその空）</div>
 </div>
 <script>window.addEventListener('error', e => { const el = document.getElementById('err'); if (el) el.textContent = 'エラー：' + e.message + '（' + String(e.filename || '').split('/').pop() + ' ' + e.lineno + '行目）'; });</script>
-<script>window.SORA_V = 42; window.SORA_DATE = '2026-10-28'; window.SORA_FV = {};
+<script>window.SORA_V = 43; window.SORA_DATE = '2026-10-29'; window.SORA_FV = {};
 // ファイルごとの版（そのファイルを変えた版の番号）。変えたファイルだけ GitHub に上げ直せばよい
-window.SORA_NEED = {app:42, ui:39, help:37, anchors:37, conart:37, inapp:41};</script>
+window.SORA_NEED = {app:42, ui:43, help:37, anchors:37, conart:37, inapp:41};</script>
 <script src="config.js?v=40"></script>
 <script src="data.js?v=40"></script>
 <script src="constellations.js?v=40"></script>
 <script src="app.js?v=42"></script>
-<script src="ui.js?v=40"></script>
+<script src="ui.js?v=43"></script>
 <script src="help.js?v=40"></script>
 <script src="inapp.js?v=41"></script>
 <script src="art/anchors.js?v=40"></script>

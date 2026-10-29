@@ -5,7 +5,7 @@
 // v39：ホーム画面アプリ（PWA）：サービスワーカーの登録、設定の「ホーム画面に追加」、起動中の表示、画面の上の色（theme-color）を明るさに合わせる
 // v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 43;
+(window.SORA_FV = window.SORA_FV || {}).ui = 44;
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -388,6 +388,41 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   applyTheme(); setInterval(applyTheme, 60000);
   window.applyTheme = applyTheme;
   window.miruThemeSet = t => applyTheme(t);
+
+  // ---------- v44：入切を MichiMiru と同じ横長のスイッチに（設定の「表示と知らせ」は文字が左・スイッチが右の1行ずつ） ----------
+  const swSt = document.createElement('style');
+  swSt.textContent =
+    '#panel #setBox>label{display:flex;align-items:center;gap:6px;min-height:46px;margin:0;padding:4px 0;border-top:1px solid var(--line);font-size:15px;cursor:pointer}' +
+    '#setBox>br{display:none}#panel #setBox>label>.qb{order:2}' +
+    '#panel #setBox>label>input[type=checkbox],#panel #helpRow input[type=checkbox],#panel #sharePlace,#share #sharePlace{appearance:none;-webkit-appearance:none;flex:0 0 52px;width:52px;height:30px;margin:0;border-radius:15px;background:#c3ccd9;position:relative;transition:background .15s;cursor:pointer;vertical-align:middle}' +
+    '#panel #helpRow input[type=checkbox],#share #sharePlace{flex-basis:40px;width:40px;height:24px;border-radius:12px;margin-right:6px}' +
+    '#panel #setBox>label>input[type=checkbox]::before,#panel #helpRow input[type=checkbox]::before,#share #sharePlace::before{content:"";position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:left .15s}' +
+    '#panel #helpRow input[type=checkbox]::before,#share #sharePlace::before{width:18px;height:18px}' +
+    '#panel #setBox>label>input[type=checkbox]:checked,#panel #helpRow input[type=checkbox]:checked,#share #sharePlace:checked{background:#2c6fd6}' +
+    '#panel #setBox>label>input[type=checkbox]:checked::before{left:25px}#panel #helpRow input[type=checkbox]:checked::before,#share #sharePlace:checked::before{left:19px}' +
+    '#panel #helpRow label{display:inline-flex;align-items:center;cursor:pointer}#share label{display:inline-flex;align-items:center;cursor:pointer}' +
+    'body.dark #panel #setBox>label>input[type=checkbox],body.dark #panel #helpRow input[type=checkbox],body.dark #share #sharePlace{background:#3a4866}' +
+    'body.dark #panel #setBox>label>input[type=checkbox]:checked,body.dark #panel #helpRow input[type=checkbox]:checked,body.dark #share #sharePlace:checked{background:#4d8ff0}' +
+    '#panel #setBox>label>input[type=checkbox]{order:3;margin-left:auto}';
+  document.head.appendChild(swSt);
+  // 「？」（help.js があとで足す）は、その行の中（文字のすぐ右）へ入れる
+  window.addEventListener('load', () => document.querySelectorAll('#setBox>label').forEach(l => { const q = l.nextElementSibling; if (q && q.classList.contains('qb')) l.appendChild(q); }));
+
+  // ---------- v44：知らせ（赤い吹き出し）が出ている間は、「あと○○で真上付近」の帯をその下へずらす ----------
+  (function () {
+    const t = $('toast'), cd = $('cdBar'); if (!t || !cd) return;
+    const fit = () => {
+      let v = '';
+      if (t.style.display === 'block' && cd.style.display === 'block') {
+        const tb = t.getBoundingClientRect(), pb = cd.offsetParent ? cd.offsetParent.getBoundingClientRect() : {top: 0};
+        v = Math.max(8, Math.round(tb.bottom - pb.top + 6)) + 'px';
+      }
+      if (cd.style.top !== v) cd.style.top = v;   // 同じ値は入れ直さない（見張りが自分の変更で回り続けないように）
+    };
+    try { new MutationObserver(fit).observe(t, {attributes: true, attributeFilter: ['style', 'class'], childList: true, characterData: true, subtree: true}); } catch (e) {}
+    try { new MutationObserver(fit).observe(cd, {attributes: true, attributeFilter: ['style']}); } catch (e) {}
+    window.addEventListener('resize', fit);
+  })();
   document.documentElement.classList.remove('predark');
 
   // ---------- 状態に合わせて ----------

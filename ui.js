@@ -5,7 +5,7 @@
 // v39：ホーム画面アプリ（PWA）：サービスワーカーの登録、設定の「ホーム画面に追加」、起動中の表示、画面の上の色（theme-color）を明るさに合わせる
 // v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 44;
+(window.SORA_FV = window.SORA_FV || {}).ui = 46; // v46：版の確認に skyzukan.js を足した
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -494,7 +494,7 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
 
   // ---------- 版の表示と、古いファイルが混ざっていないかの確認（v37） ----------
   // index.html の版（SORA_V）と、各ファイルが書き込んだ版（SORA_FV）をくらべる。合わなければ設定と知らせで伝える
-  const VER_FILES = [['app', 'app.js'], ['ui', 'ui.js'], ['help', 'help.js'], ['anchors', 'art/anchors.js'], ['conart', 'conart.js']];
+  const VER_FILES = [['app', 'app.js'], ['ui', 'ui.js'], ['help', 'help.js'], ['anchors', 'art/anchors.js'], ['conart', 'conart.js'], ['skyz', 'skyzukan.js']];
   function verCheck() {
     const V = window.SORA_V, F = window.SORA_FV || {}, label = V ? `SoraMiru　試作 v${V}（${window.SORA_DATE || ''}）` : 'SoraMiru　試作';
     $('verT').innerHTML = `<b>${esc(label)}</b>`;

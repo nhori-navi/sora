@@ -5,7 +5,8 @@
 // v39：ホーム画面アプリ（PWA）：サービスワーカーの登録、設定の「ホーム画面に追加」、起動中の表示、画面の上の色（theme-color）を明るさに合わせる
 // v38：横向きで空に向けたときは、パネルとタブを消して空の画面を画面いっぱいに（注意の文だけ空の画面に重ねる）。版はファイルごとに index.html の SORA_NEED とくらべる
 // app.js のあと、help.js の前に読む。部品の id は変えずに置き場所だけを動かすので、app.js の動きはそのまま
-(window.SORA_FV = window.SORA_FV || {}).ui = 46; // v46：版の確認に skyzukan.js を足した
+// v47：知らせと「あと○○で真上付近」の帯に右端の「×」と払う操作（動きは app.js）、今夜の空の欄に［🛰 軌道を地図で見る］
+(window.SORA_FV = window.SORA_FV || {}).ui = 47; // v46：版の確認に skyzukan.js を足した。v47：×・払う・軌道のボタン
 (function () {
   const el = (tag, attrs, html) => { const e = document.createElement(tag); Object.assign(e, attrs || {}); if (html != null) e.innerHTML = html; return e; };
   const panel = $('panel');
@@ -229,6 +230,11 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   const skyNow = el('details', {id:'skyNow'});
   const skySum = el('summary', {}, '🌙 今夜の空・宇宙ステーション');
   skyNow.appendChild(skySum); skyNow.appendChild($('night')); skyNow.appendChild($('iss'));
+  { // v47：宇宙ステーションの軌道を地図で見る（押すと地図を引く／近くに戻る。動きは app.js の issTrkToggle）
+    const r = el('div', {id:'issTrkRow'}, '<button id="issTrkBtn">🛰 軌道を地図で見る</button><span class="small">地図を引いて、通り道を点線で見ます</span>');
+    skyNow.appendChild(r); r.querySelector('#issTrkBtn').onclick = e => { e.stopPropagation(); if (typeof issTrkToggle === 'function') issTrkToggle(); };
+    if (typeof trkUi === 'function') trkUi();
+  }
   try { skyNow.open = localStorage.getItem('sora_skynow') === '1'; } catch (e) {}
   skyNow.addEventListener('toggle', () => { try { localStorage.setItem('sora_skynow', skyNow.open ? '1' : '0'); } catch (e) {} });
   tList.appendChild(skyNow);
@@ -407,6 +413,12 @@ body.dark .mapboxgl-ctrl-attrib a{color:#aab6cc !important}`));
   document.head.appendChild(swSt);
   // 「？」（help.js があとで足す）は、その行の中（文字のすぐ右）へ入れる
   window.addEventListener('load', () => document.querySelectorAll('#setBox>label').forEach(l => { const q = l.nextElementSibling; if (q && q.classList.contains('qb')) l.appendChild(q); }));
+
+  // ---------- v47：知らせと帯の右端の「×」、払う操作のための指定 ----------
+  document.head.appendChild(el('style', {}, '#toast,#cdBar{touch-action:none;user-select:none;-webkit-user-select:none}' +
+    '#toast{padding-right:38px}#cdBar{padding-right:36px}' +
+    '#toast::after,#cdBar::after{content:"×";position:absolute;top:50%;right:0;width:34px;transform:translateY(-50%);text-align:center;font-size:20px;font-weight:bold;line-height:1;opacity:.75}' +
+    '#issTrkRow{margin:-4px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}#issTrkRow button{white-space:nowrap}#issTrkRow .small{flex:1;min-width:140px}'));
 
   // ---------- v44：知らせ（赤い吹き出し）が出ている間は、「あと○○で真上付近」の帯をその下へずらす ----------
   (function () {

@@ -1,5 +1,5 @@
 // 見上げアプリの動き（中継のアドレスは config.js、辞書は data.js）
-(window.SORA_FV = window.SORA_FV || {}).app = 42; // 版の番号（v37 から。ui.js が index.html の版とくらべる。v42：宇宙ステーションの通過を sora_iss_v1 に残す）
+(window.SORA_FV = window.SORA_FV || {}).app = 47; // 版の番号（v37 から。ui.js が index.html の版とくらべる。v42：宇宙ステーションの通過を sora_iss_v1 に残す。v47：知らせと帯を払って消す・宇宙ステーションの軌道と空の通り道）
 const RELAYS = [typeof RELAY === 'string' ? RELAY : '', typeof RELAY2 === 'string' ? RELAY2 : '']
   .map(u => u.trim().replace(/\/+$/, '')).filter(u => /^https:\/\//.test(u) && !u.includes('〇'));
 const RELAY_CF = RELAYS.find(u => !u.includes('script.google.com')) || '';
@@ -3181,6 +3181,231 @@ drawScope = function () {
   g.fillStyle = '#fff'; lines.forEach((s, i) => g.fillText(fitText(g, s, w - 14), 15, 47 + i * 17));
   g.restore();
 };
+
+// ---------- 知らせと帯を払って消す・宇宙ステーションの軌道と通り道（v47） ----------
+// (1) 知らせ（#toast）と「あと○○で真上付近」の帯（#cdBar）：左右に払う（知らせは上にも）か、右端の「×」で消す。画面は切り替えない
+//     帯を消したら、その機体のカウントダウンはおしまい（「いま真上！」・振動・空の画面の輪と矢印も出さない）。別の機体が来たらまた出る
+function cdDismiss() {
+  if (cdT) { ['30', '0', 'end'].forEach(k => cdDone.add(k + '|' + cdT.hex)); }
+  cdT = null; cdRender();
+}
+function toastDismiss() { clearTimeout(toastTimer); $('toast').style.display = 'none'; }
+const SW_X = 36; // 右端の「×」の幅（px）
+function swipeAway(el, base, upToo, gone) {
+  let st = null, moved = false;
+  const reset = () => { el.style.transition = ''; el.style.transform = ''; el.style.opacity = ''; };
+  const put = (dx, dy, a) => { el.style.transform = `${base}translate(${dx}px,${dy}px)`; el.style.opacity = a; };
+  el.addEventListener('pointerdown', e => {
+    if (e.button > 0) return;
+    st = {x:e.clientX, y:e.clientY, t:Date.now(), id:e.pointerId}; moved = false; el.style.transition = 'none';
+    try { el.setPointerCapture(e.pointerId); } catch (er) {}
+  });
+  el.addEventListener('pointermove', e => {
+    if (!st || e.pointerId !== st.id) return;
+    const dx = e.clientX - st.x, dy = e.clientY - st.y;
+    if (!moved && Math.hypot(dx, dy) > 8) moved = true;
+    if (!moved) return;
+    const up = upToo && dy < 0 && -dy > Math.abs(dx);
+    if (up) put(0, dy, Math.max(0.2, 1 + dy / 120)); else put(dx, 0, Math.max(0.2, 1 - Math.abs(dx) / 220));
+  });
+  const end = e => {
+    if (!st || e.pointerId !== st.id) return;
+    const dx = e.clientX - st.x, dy = e.clientY - st.y, dt = Math.max(1, Date.now() - st.t); st = null;
+    if (!moved) { reset(); return; }
+    el._swiped = Date.now(); // このあとの click（タップ扱い）を無視する
+    const up = upToo && dy < 0 && -dy > Math.abs(dx);
+    const far = up ? (-dy > 40 || -dy / dt > 0.5) : (Math.abs(dx) > 70 || Math.abs(dx) / dt > 0.6);
+    el.style.transition = 'transform .18s ease-out, opacity .18s ease-out';
+    if (far) {
+      if (up) put(0, -160, 0); else put(dx > 0 ? window.innerWidth : -window.innerWidth, 0, 0);
+      setTimeout(() => { gone(); reset(); }, 190);
+    } else { put(0, 0, 1); setTimeout(reset, 190); }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', e => { if (st && e.pointerId === st.id) { st = null; el.style.transition = 'transform .18s'; put(0, 0, 1); setTimeout(reset, 190); } });
+}
+swipeAway($('toast'), 'translateX(-50%) ', true, toastDismiss);
+swipeAway($('cdBar'), '', false, cdDismiss);
+// 払ったあとの click と、右端の「×」の click は、ここで受け止める（今までの「押すとその機体を選ぶ」より先に）
+window.addEventListener('click', e => {
+  for (const [id, fn] of [['toast', toastDismiss], ['cdBar', cdDismiss]]) {
+    const el = $(id); if (!el || !el.contains(e.target)) continue;
+    if (el._swiped && Date.now() - el._swiped < 400) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+    const r = el.getBoundingClientRect();
+    if (e.clientX > r.right - SW_X) { e.stopImmediatePropagation(); e.preventDefault(); fn(); return; }
+  }
+}, true);
+
+// (2) 地図に宇宙ステーションの軌道（真下の地点をつないだ線）：さっきまで15分は細い実線、これから90分は点線、
+//     次に肉眼で見える通過の区間は太いオレンジの点線と、両端の時刻
+const TRK_PAST = 15, TRK_FUT = 90;
+let trkAt = 0, trkKey = '', trkView = null; // trkView = 地図を引いて軌道を見ている間 {zoom}
+function issGeo(t) {
+  const d = new Date(t), pv = satellite.propagate(issRec, d);
+  if (!pv || !pv.position) return null;
+  const gd = satellite.eciToGeodetic(pv.position, satellite.gstime(d));
+  return [satellite.degreesLong(gd.longitude), satellite.degreesLat(gd.latitude)];
+}
+function trkLines(t0, t1, step, k) { // 経度180°をまたぐところで線を分ける
+  const out = []; let cur = [], prev = null;
+  for (let t = t0; t <= t1; t += step) {
+    const p = issGeo(t); if (!p) continue;
+    if (prev && Math.abs(p[0] - prev[0]) > 180) { if (cur.length > 1) out.push(cur); cur = []; }
+    cur.push(p); prev = p;
+  }
+  if (cur.length > 1) out.push(cur);
+  return out.map(c => ({type:'Feature', properties:{k}, geometry:{type:'LineString', coordinates:c}}));
+}
+const issNextPass = now => issPasses.find(p => p.e > now);
+function trkDraw(force) {
+  if (!issRec || !map.getSource('isstrk')) return;
+  const now = Date.now(), nx = issNextPass(now), key = nx ? nx.s : '';
+  if (!force && now - trkAt < 30000 && key === trkKey) return;
+  trkAt = now; trkKey = key;
+  const f = [...trkLines(now - TRK_PAST * 60000, now, 30000, 'past'), ...trkLines(now, now + TRK_FUT * 60000, 30000, 'fut')];
+  if (nx) {
+    f.push(...trkLines(nx.s, nx.e, 10000, 'vis'));
+    const a = issGeo(nx.s), b = issGeo(nx.e);
+    if (a) f.push({type:'Feature', properties:{k:'vlab', t:md(nx.s) + ' ' + hm(nx.s) + ' 見えはじめ'}, geometry:{type:'Point', coordinates:a}});
+    if (b) f.push({type:'Feature', properties:{k:'vlab', t:hm(nx.e) + ' 見えおわり'}, geometry:{type:'Point', coordinates:b}});
+  }
+  setData('isstrk', f);
+}
+function trkSetup() {
+  if (map.getSource('isstrk')) return;
+  map.addSource('isstrk', {type:'geojson', data:{type:'FeatureCollection', features:[]}});
+  map.addLayer({id:'isstrkPast', type:'line', source:'isstrk', filter:['==', ['get', 'k'], 'past'],
+    paint:{'line-color':'#6f7f9f', 'line-width':1.5, 'line-opacity':0.8}});
+  map.addLayer({id:'isstrkFut', type:'line', source:'isstrk', filter:['==', ['get', 'k'], 'fut'], layout:{'line-cap':'round'},
+    paint:{'line-color':'#2c6fd6', 'line-width':3, 'line-dasharray':[0, 2], 'line-opacity':0.85}});
+  map.addLayer({id:'isstrkVis', type:'line', source:'isstrk', filter:['==', ['get', 'k'], 'vis'], layout:{'line-cap':'round'},
+    paint:{'line-color':'#e67e22', 'line-width':6, 'line-dasharray':[0, 1.6]}});
+  map.addLayer({id:'isstrkLab', type:'symbol', source:'isstrk', filter:['==', ['get', 'k'], 'vlab'],
+    layout:{'text-field':['get', 't'], 'text-size':12, 'text-offset':[0, 1.1], 'text-anchor':'top', 'text-allow-overlap':true},
+    paint:{'text-color':'#b35400', 'text-halo-color':'#fff', 'text-halo-width':1.5}});
+  trkDraw(true);
+}
+if (map.isStyleLoaded && map.isStyleLoaded()) trkSetup(); else map.on('load', trkSetup);
+setInterval(() => { if (!document.hidden) trkDraw(false); }, 5000);
+// 地図を引いて軌道を見る／近くに戻る（「今夜の空・宇宙ステーション」の欄のボタンと、地図の ISS の印）
+function trkUi() {
+  const b = $('issTrkBtn'); if (!b) return;
+  b.textContent = trkView ? '↩ 近くに戻る' : '🛰 軌道を地図で見る';
+  b.disabled = !issRec || !pos;
+}
+function issTrkToggle() {
+  if (!issRec || !pos) return;
+  if (trkView) { const z = trkView.zoom; trkView = null; map.easeTo({center:pos, zoom:z, duration:700}); trkUi(); return; }
+  trkView = {zoom:map.getZoom()};
+  trkDraw(true);
+  const now = Date.now(), nx = issNextPass(now), bd = new mapboxgl.LngLatBounds(pos, pos);
+  if (nx && nx.s - now < 24 * 3600000) {
+    for (let t = nx.s; t <= nx.e; t += 20000) { const p = issGeo(t); if (p && Math.abs(p[0] - pos[0]) < 180) bd.extend(p); }
+    map.fitBounds(bd, {padding:50, maxZoom:5.5, duration:900});
+  } else map.easeTo({center:pos, zoom:2, duration:900});
+  trkUi();
+}
+{ // 地図の ISS の印を押したときも同じ
+  const issTickV46 = issTick;
+  issTick = function () {
+    issTickV46();
+    if (issMarker && !issMarker._v47) {
+      issMarker._v47 = true; const e = issMarker.getElement();
+      e.style.cursor = 'pointer'; e.title = '押すと軌道を地図で見る／近くに戻る';
+      e.addEventListener('click', ev => { ev.stopPropagation(); issTrkToggle(); });
+    }
+    trkUi();
+  };
+}
+
+// (3) 空に向けた画面：次に肉眼で見える通過の、始まる30分前から終わるまで、空の通り道を点線で描く
+//     1分ごとの時刻、進む向きの「›」、始まり「ここから」、終わり「ここで消える」（地球の影に入る）か「地平線へ」（低くなる）
+//     通過中は通り過ぎた部分を薄く。通り道が画面の外なら、端に矢印「ISS あと12:30」
+const ISS_PATH_BEFORE = 30;
+let issPath = null; // {key, s, e, pts:[{t, az, el}], end:'shadow'|'low'}
+function issPathGet(now) {
+  if (!issRec || !pos) return null;
+  const nx = issNextPass(now);
+  if (!nx || nx.s - now > ISS_PATH_BEFORE * 60000) return null;
+  const key = nx.s + '|' + pos[0].toFixed(2) + '|' + pos[1].toFixed(2);
+  if (issPath && issPath.key === key) return issPath;
+  const pts = []; let lastT = null;
+  for (let t = nx.s - 20000; t <= nx.e + 20000; t += 5000) {
+    const d = new Date(t), L = issLook(d);
+    if (L && issVisible(L, d)) { pts.push({t, az:L.az, el:L.el}); lastT = t; }
+    else if (pts.length) break;
+  }
+  if (pts.length < 2) return null;
+  const d1 = new Date(lastT + 5000), L1 = issLook(d1);
+  const end = L1 && L1.el > 10 && sunAt(pos[1], pos[0], d1).el < -6 && !issLit(L1.eci, d1) ? 'shadow' : 'low';
+  issPath = {key, s:pts[0].t, e:lastT, pts, end};
+  return issPath;
+}
+function issPathDraw(g, toXY, W) {
+  const P = issPathGet(Date.now()); if (!P) return;
+  const now = Date.now(), xy = P.pts.map(p => toXY(p.az, p.el));
+  const jump = i => Math.abs(xy[i][0] - xy[i - 1][0]) > W * 0.6; // 真後ろをまたぐところは線を切る
+  g.save(); g.shadowBlur = 0; g.lineCap = 'round'; g.lineWidth = 3; g.setLineDash([0.5, 7]);
+  for (const past of [true, false]) {
+    g.strokeStyle = past ? 'rgba(127,227,255,.3)' : 'rgba(127,227,255,.95)';
+    g.beginPath(); let on = false;
+    for (let i = 1; i < xy.length; i++) {
+      if ((P.pts[i].t <= now) !== past || jump(i)) { on = false; continue; }
+      if (!on) { g.moveTo(xy[i - 1][0], xy[i - 1][1]); on = true; }
+      g.lineTo(xy[i][0], xy[i][1]);
+    }
+    g.stroke();
+  }
+  g.setLineDash([]);
+  // 1分ごとの目盛りと時刻、その間に進む向きの「›」
+  g.font = '11px sans-serif'; g.textAlign = 'left';
+  for (let i = 1; i < P.pts.length; i++) {
+    const t = P.pts[i].t, [x, y] = xy[i];
+    if (x < -20 || x > W + 20 || jump(i)) continue;
+    const a = P.pts[i].t < now ? 0.35 : 1;
+    if (Math.floor(t / 60000) !== Math.floor(P.pts[i - 1].t / 60000) && i < P.pts.length - 1) {
+      g.fillStyle = `rgba(127,227,255,${a})`; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill();
+      g.fillStyle = `rgba(210,245,255,${a})`; g.fillText(hm(Math.floor(t / 60000) * 60000), x + 6, y - 6);
+    } else if (Math.floor((t + 30000) / 60000) !== Math.floor((P.pts[i - 1].t + 30000) / 60000)) {
+      const ang = Math.atan2(y - xy[i - 1][1], x - xy[i - 1][0]);
+      g.save(); g.translate(x, y); g.rotate(ang); g.strokeStyle = `rgba(127,227,255,${a})`; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-4, -5); g.lineTo(2, 0); g.lineTo(-4, 5); g.stroke(); g.restore();
+    }
+  }
+  // 始まりと終わり
+  g.font = 'bold 12px sans-serif';
+  const lab = (i, text) => { const [x, y] = xy[i]; if (x < -40 || x > W + 40) return; g.fillStyle = '#7fe3ff'; g.beginPath(); g.arc(x, y, 4.5, 0, 7); g.fill();
+    g.fillStyle = '#e8fbff'; g.textAlign = x > W - 110 ? 'right' : 'left'; g.fillText(text, x + (x > W - 110 ? -8 : 8), y + 16); g.textAlign = 'left'; };
+  lab(0, 'ここから ' + hm(P.s));
+  lab(P.pts.length - 1, (P.end === 'shadow' ? 'ここで消える ' : '地平線へ ') + hm(P.e));
+  g.restore();
+}
+function issPathArrow(g, toXY) {
+  const now = Date.now(), P = issPathGet(now); if (!P || now > P.e) return;
+  const on = now >= P.s, box = $('scopeBox'), W = box.clientWidth, H = box.clientHeight, cx = W / 2, cy = H / 2;
+  const tg = on && issNow ? [issNow.az, issNow.el] : [P.pts[0].az, P.pts[0].el];
+  const [x, y] = toXY(tg[0], tg[1]);
+  if (x > 12 && x < W - 12 && y > 30 && y < H - 50) return; // 画面の中に見えている
+  const lab = on ? 'ISS 通過中' : 'ISS あと' + mmss(Math.max(0, Math.round((P.s - now) / 1000)));
+  const X0 = 30, X1 = W - 30, Y0 = 110, Y1 = H - 90;
+  const dx = x - cx, dy = y - cy, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+  const kx = ux > 0 ? (X1 - cx) / ux : ux < 0 ? (X0 - cx) / ux : Infinity;
+  const ky = uy > 0 ? (Y1 - cy) / uy : uy < 0 ? (Y0 - cy) / uy : Infinity;
+  const k = Math.max(0, Math.min(kx, ky)), ax = cx + ux * k, ay = cy + uy * k, a = Math.atan2(uy, ux);
+  g.save(); g.shadowBlur = 0; g.font = 'bold 13px sans-serif'; g.textAlign = 'center';
+  g.translate(ax, ay); g.rotate(a);
+  g.fillStyle = '#7fe3ff'; g.beginPath(); g.moveTo(16, 0); g.lineTo(-8, -11); g.lineTo(-3, 0); g.lineTo(-8, 11); g.closePath(); g.fill();
+  g.rotate(-a); g.translate(-ax, -ay);
+  const tw = g.measureText(lab).width, d = 20 + Math.abs(ux) * tw / 2 + Math.abs(uy) * 8;
+  g.fillStyle = '#e8fbff'; g.fillText(lab, ax - ux * d, ay - uy * d + 4);
+  g.restore();
+}
+{ // 通り道は星座の線のあと・機体より先（下）に、矢印はいちばん上に描く
+  const conLayerV46 = conLayer;
+  conLayer = function (g, toXY, dAz, off, W, H, cx, cy, sc) { const r = conLayerV46(g, toXY, dAz, off, W, H, cx, cy, sc); issPathDraw(g, toXY, W); return r; };
+  const catchStepV46 = catchStep;
+  catchStep = function (g, toXY, off) { catchStepV46(g, toXY, off); issPathArrow(g, toXY); };
+}
 
 const savedPos = lsGet('sora_lastpos', null);
 // ---------- 戻る操作（v14） ----------
